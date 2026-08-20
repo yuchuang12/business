@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "tenant_id": "ten_pet_store",
+  "actor_id": "svc_publish_worker",
+  "actor_type": "service_principal",
+  "roles": [
+    "system_service"
+  ],
+  "scopes": [
+    "site:read",
+    "site:publish"
+  ],
+  "trace_id": "7bba9f33312b3a12b8c2c2c2c2c2c2c2",
+  "request_origin": {
+    "kind": "internal_worker",
+    "request_id": "job_publish_001"
+  },
+  "site_id": "site_pet_store"
+}

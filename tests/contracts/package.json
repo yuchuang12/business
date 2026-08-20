@@ -1,0 +1,11 @@
+{
+  "name": "agent-commerce-contract-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tenant-context-v1.test.mjs"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0"
+  }
+}

@@ -1,0 +1,10 @@
+[
+  "schema_version",
+  "tenant_id",
+  "actor_id",
+  "actor_type",
+  "roles",
+  "scopes",
+  "trace_id",
+  "request_origin"
+]
