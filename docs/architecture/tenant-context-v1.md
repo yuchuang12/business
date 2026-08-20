@@ -1,6 +1,6 @@
 # TenantContext v1 Architecture
 
-- Status: proposed
+- Status: accepted
 - Contract: `contracts/tenant-context/v1/tenant-context.schema.json`
 - Related issue: YUC-5
 
