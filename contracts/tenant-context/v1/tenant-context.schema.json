@@ -1,0 +1,238 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-commerce-platform:tenant-context:1.0",
+  "title": "TenantContext v1",
+  "description": "Trusted, immutable tenant and actor context propagated out of band across application, Agent, Tool, workflow, repository, audit, and provider boundaries.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "tenant_id",
+    "actor_id",
+    "actor_type",
+    "roles",
+    "scopes",
+    "trace_id",
+    "request_origin"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "tenant_id": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "actor_id": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "actor_type": {
+      "enum": [
+        "user",
+        "customer_session",
+        "service_principal"
+      ]
+    },
+    "roles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "tenant_owner",
+          "tenant_admin",
+          "merchant_operator",
+          "support_readonly",
+          "customer",
+          "system_service"
+        ]
+      }
+    },
+    "scopes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "tenant:read",
+          "tenant:write",
+          "site:read",
+          "site:write",
+          "site:publish",
+          "product:read",
+          "product:write",
+          "asset:read",
+          "asset:write",
+          "knowledge:read",
+          "knowledge:write",
+          "domain:read",
+          "domain:purchase",
+          "domain:write",
+          "commerce:read",
+          "commerce:write",
+          "lead:read",
+          "lead:write",
+          "agent:run",
+          "ops:read",
+          "ops:retry"
+        ]
+      }
+    },
+    "trace_id": {
+      "description": "W3C-compatible 16-byte trace identifier encoded as 32 lowercase hexadecimal characters.",
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "not": {
+        "const": "00000000000000000000000000000000"
+      }
+    },
+    "request_origin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "request_id"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "merchant_console",
+            "customer_site",
+            "public_api",
+            "webhook",
+            "scheduled_job",
+            "internal_worker"
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/opaqueId"
+        }
+      }
+    },
+    "site_id": {
+      "$ref": "#/$defs/opaqueId"
+    },
+    "project_id": {
+      "$ref": "#/$defs/opaqueId"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "actor_type": {
+            "const": "user"
+          }
+        },
+        "required": [
+          "actor_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "roles": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "tenant_owner",
+                "tenant_admin",
+                "merchant_operator",
+                "support_readonly",
+                "customer"
+              ]
+            }
+          },
+          "request_origin": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "merchant_console",
+                  "customer_site",
+                  "public_api"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "actor_type": {
+            "const": "customer_session"
+          }
+        },
+        "required": [
+          "actor_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "roles": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "const": "customer"
+            }
+          },
+          "request_origin": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "const": "customer_site"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "actor_type": {
+            "const": "service_principal"
+          }
+        },
+        "required": [
+          "actor_type"
+        ]
+      },
+      "then": {
+        "properties": {
+          "roles": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "const": "system_service"
+            }
+          },
+          "request_origin": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "webhook",
+                  "scheduled_job",
+                  "internal_worker"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "opaqueId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    }
+  }
+}
