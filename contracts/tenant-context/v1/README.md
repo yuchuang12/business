@@ -2,7 +2,7 @@
 
 - Contract version: `1.0`
 - Schema: `tenant-context.schema.json`
-- Status: proposed
+- Status: frozen
 - Related issue: YUC-5
 - Decision record: `docs/adr/0002-tenant-context-v1.md`
 

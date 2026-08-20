@@ -16,6 +16,6 @@
 - 业务模块不得在本目录之外复制或重新定义公共协议。
 - `packages/contracts/` 可以包含由本目录源定义生成的语言级类型，但不得成为另一个事实来源。
 
-## 已提议协议
+## 已冻结协议
 
-- [`TenantContext v1`](tenant-context/v1/README.md)：YUC-5 的待审阅协议提案；审阅通过前不得视为冻结版本。
+- [`TenantContext v1`](tenant-context/v1/README.md)：YUC-5，经项目所有者批准并冻结为 `1.0`。

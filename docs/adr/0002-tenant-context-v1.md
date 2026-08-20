@@ -1,8 +1,9 @@
 # ADR-0002: Establish TenantContext v1 as an out-of-band security context
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-08-21
 - Owners: Architect + Backend + Agent Runtime reviewers
+- Approved by: 于闯（项目所有者，2026-08-21）
 - Related issues: YUC-5, YUC-7, YUC-8
 
 ## Context
