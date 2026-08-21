@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tenant-context-v1.test.mjs tool-contract-v1.test.mjs site-schema-v1.test.mjs agent-run-tool-execution-v1.test.mjs"
+    "test": "node --test tenant-context-v1.test.mjs tool-contract-v1.test.mjs site-schema-v1.test.mjs agent-run-tool-execution-v1.test.mjs generative-ui-v1.test.mjs"
   },
   "devDependencies": {
     "ajv": "8.20.0"
