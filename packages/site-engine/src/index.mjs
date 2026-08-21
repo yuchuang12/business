@@ -1,4 +1,4 @@
-import { SiteSchemaError, resolveReferences, validateSiteSchema, validateTenantContext } from "@agent-commerce/site-schema";
+import { SiteSchemaError, resolveReferences, validateSiteSchema, validateTenantContext } from "../../site-schema/src/index.mjs";
 
 const TERMINAL = new Set(["published"]);
 const clone = (value) => structuredClone(value);

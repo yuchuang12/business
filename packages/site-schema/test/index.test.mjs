@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { SiteSchemaError, validateSiteSchema, resolveReferences } from "../src/index.mjs";
 
-const golden = JSON.parse(await readFile(new URL("../../../../contracts/site-schema/v1/examples/golden-path.json", import.meta.url)));
+const golden = JSON.parse(await readFile(new URL("../../../contracts/site-schema/v1/examples/golden-path.json", import.meta.url)));
 const context = { schema_version: "1.0", tenant_id: "ten_pet_store", actor_id: "usr_owner", actor_type: "user", roles: ["tenant_owner"], scopes: ["site:read", "site:publish"], trace_id: "4bf92f3577b34da6a3ce929d0e0e4736", request_origin: { kind: "merchant_console", request_id: "req_100" } };
 const expectCode = (fn, code) => assert.throws(fn, (error) => error instanceof SiteSchemaError && error.code === code);
 
