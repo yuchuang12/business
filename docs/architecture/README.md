@@ -22,3 +22,4 @@
 ## 协议说明
 
 - [`TenantContext v1`](tenant-context-v1.md)：可信构造、传播、Repository 隔离、审计与日志边界。
+- [`ToolContract v1`](tool-contract-v1.md)：Agent Tool 的统一信封、执行生命周期、幂等、审批和错误分类。

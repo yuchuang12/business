@@ -19,4 +19,5 @@
 ## 已冻结协议
 
 - [`TenantContext v1`](tenant-context/v1/README.md)：YUC-5，经项目所有者批准并冻结为 `1.0`。
+- [`ToolContract v1`](tool-contract/v1/README.md)：YUC-7，定义 Agent Tool 的统一信封、幂等、审批、审计和错误分类。
 - [`SiteSchema v1`](site-schema/v1/README.md) and [`ThemeToken v1`](theme-token/v1/README.md)：YUC-6，冻结为 `1.0`。

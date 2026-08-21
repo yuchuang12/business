@@ -1,0 +1,23 @@
+{
+  "envelope_type": "tool_request",
+  "contract_version": "1.0",
+  "tool_name": "site.publish",
+  "tool_version": "1.0",
+  "tenant_context_ref": {
+    "schema_version": "1.0",
+    "context_id": "ctx_01jtool",
+    "tenant_id": "ten_pet_store",
+    "actor_id": "user_alice",
+    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736"
+  },
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "idempotency_key": "publish-site-request-42",
+  "input": {
+    "site_id": "site_pet_store",
+    "site_version_id": "version_42"
+  },
+  "approval_reference": {
+    "approval_id": "approval_01jtool",
+    "approval_version": 1
+  }
+}

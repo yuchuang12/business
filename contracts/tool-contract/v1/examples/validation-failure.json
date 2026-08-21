@@ -1,0 +1,15 @@
+{
+  "envelope_type": "tool_response",
+  "contract_version": "1.0",
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "TOOL_INVALID_REQUEST",
+    "category": "validation",
+    "message": "The site update input is invalid."
+  },
+  "retryable": false,
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "audit_id": "audit_01jtool_validation",
+  "tool_execution_id": "exec_01jtool_validation"
+}

@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-commerce-platform:tool-contract:1.0",
+  "title": "ToolContract v1",
+  "description": "Common trusted envelope for Agent-callable tool requests and responses.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/response"
+    }
+  ],
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "envelope_type",
+        "contract_version",
+        "tool_name",
+        "tool_version",
+        "tenant_context_ref",
+        "trace_id",
+        "idempotency_key",
+        "input"
+      ],
+      "properties": {
+        "envelope_type": {
+          "const": "tool_request"
+        },
+        "contract_version": {
+          "const": "1.0"
+        },
+        "tool_name": {
+          "$ref": "#/$defs/name"
+        },
+        "tool_version": {
+          "$ref": "#/$defs/version"
+        },
+        "tenant_context_ref": {
+          "$ref": "#/$defs/tenantContextRef"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/traceId"
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        },
+        "input": {
+          "type": "object"
+        },
+        "approval_reference": {
+          "$ref": "#/$defs/approvalReference"
+        }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "envelope_type",
+        "contract_version",
+        "success",
+        "retryable",
+        "trace_id",
+        "audit_id"
+      ],
+      "properties": {
+        "envelope_type": {
+          "const": "tool_response"
+        },
+        "contract_version": {
+          "const": "1.0"
+        },
+        "success": {
+          "type": "boolean"
+        },
+        "data": {},
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/traceId"
+        },
+        "audit_id": {
+          "$ref": "#/$defs/name"
+        },
+        "tool_execution_id": {
+          "$ref": "#/$defs/name"
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 16,
+          "maxLength": 256,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "success": {
+                "const": true
+              }
+            },
+            "required": [
+              "success"
+            ]
+          },
+          "then": {
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {},
+              "error": {
+                "type": "null"
+              },
+              "retryable": {
+                "const": false
+              }
+            }
+          },
+          "else": {
+            "required": [
+              "error"
+            ],
+            "properties": {
+              "error": {},
+              "data": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "tenantContextRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "context_id",
+        "tenant_id",
+        "actor_id",
+        "trace_id"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "context_id": {
+          "$ref": "#/$defs/name"
+        },
+        "tenant_id": {
+          "$ref": "#/$defs/name"
+        },
+        "actor_id": {
+          "$ref": "#/$defs/name"
+        },
+        "trace_id": {
+          "$ref": "#/$defs/traceId"
+        }
+      }
+    },
+    "approvalReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "approval_id",
+        "approval_version"
+      ],
+      "properties": {
+        "approval_id": {
+          "$ref": "#/$defs/name"
+        },
+        "approval_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "category"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/errorCode"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "category": {
+          "enum": [
+            "validation",
+            "authorization",
+            "approval",
+            "conflict",
+            "not_found",
+            "rate_limit",
+            "provider",
+            "timeout",
+            "transient_infrastructure",
+            "internal"
+          ]
+        },
+        "details": {
+          "type": "object",
+          "additionalProperties": false
+        }
+      }
+    },
+    "name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$"
+    },
+    "traceId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "not": {
+        "const": "00000000000000000000000000000000"
+      }
+    },
+    "errorCode": {
+      "type": "string",
+      "pattern": "^TOOL_[A-Z0-9_]+$"
+    }
+  }
+}

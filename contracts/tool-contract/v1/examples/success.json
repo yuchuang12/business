@@ -1,0 +1,15 @@
+{
+  "envelope_type": "tool_response",
+  "contract_version": "1.0",
+  "success": true,
+  "data": {
+    "site_id": "site_pet_store",
+    "version": "draft_42"
+  },
+  "error": null,
+  "retryable": false,
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "audit_id": "audit_01jtool_success",
+  "tool_execution_id": "exec_01jtool_success",
+  "idempotency_key": "merchant-site-update-42"
+}
