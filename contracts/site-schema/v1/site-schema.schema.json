@@ -1,0 +1,323 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-commerce-platform:site-schema:1.0",
+  "title": "SiteSchema v1",
+  "description": "Versioned, data-only site document rendered by the React Site Engine.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "site_id", "name", "theme", "navigation", "pages", "seo"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "site_id": { "$ref": "#/$defs/opaqueId" },
+    "name": { "$ref": "#/$defs/plainText" },
+    "default_locale": { "enum": ["en-US", "zh-CN"] },
+    "theme": { "$ref": "urn:agent-commerce-platform:theme-token:1.0" },
+    "navigation": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": { "$ref": "#/$defs/navigationItem" }
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/page" }
+    },
+    "seo": { "$ref": "#/$defs/seo" }
+  },
+  "$defs": {
+    "opaqueId": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "plainText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": "^[^<>\\u0000-\\u001F]*$"
+    },
+    "assetRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_id"],
+      "properties": {
+        "asset_id": { "$ref": "#/$defs/opaqueId" },
+        "alt": { "$ref": "#/$defs/plainText" },
+        "focal_point": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y"],
+          "properties": {
+            "x": { "type": "number", "minimum": 0, "maximum": 1 },
+            "y": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        }
+      }
+    },
+    "pageRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_id"],
+      "properties": { "page_id": { "$ref": "#/$defs/opaqueId" } }
+    },
+    "navigationItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "destination"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "label": { "$ref": "#/$defs/plainText" },
+        "destination": {
+          "oneOf": [
+            { "$ref": "#/$defs/pageRef" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["url"],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "pattern": "^https://"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "seo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "description"],
+      "properties": {
+        "title": { "$ref": "#/$defs/plainText" },
+        "description": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[^<>\\u0000-\\u001F]*$" },
+        "og_image": { "$ref": "#/$defs/assetRef" }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_id", "slug", "title", "sections", "seo"],
+      "properties": {
+        "page_id": { "$ref": "#/$defs/opaqueId" },
+        "slug": { "type": "string", "pattern": "^/(?:[a-z0-9]+(?:-[a-z0-9]+)*/?)*$" },
+        "title": { "$ref": "#/$defs/plainText" },
+        "sections": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/section" }
+        },
+        "seo": { "$ref": "#/$defs/seo" }
+      }
+    },
+    "responsive": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "mobile": { "$ref": "#/$defs/responsiveLayout" },
+        "tablet": { "$ref": "#/$defs/responsiveLayout" },
+        "desktop": { "$ref": "#/$defs/responsiveLayout" }
+      }
+    },
+    "responsiveLayout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "display": { "enum": ["visible", "hidden"] },
+        "columns": { "type": "integer", "minimum": 1, "maximum": 4 },
+        "gap": { "enum": ["none", "sm", "md", "lg"] },
+        "padding": { "enum": ["none", "sm", "md", "lg"] },
+        "align": { "enum": ["start", "center", "end", "stretch"] }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "container": { "enum": ["full", "wide", "standard", "narrow"] },
+        "responsive": { "$ref": "#/$defs/responsive" }
+      }
+    },
+    "sectionBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "props"],
+      "properties": {
+        "id": { "$ref": "#/$defs/opaqueId" },
+        "type": { "type": "string" },
+        "layout": { "$ref": "#/$defs/layout" },
+        "props": { "type": "object" }
+      }
+    },
+    "section": {
+      "oneOf": [
+        { "$ref": "#/$defs/heroSection" },
+        { "$ref": "#/$defs/productGridSection" },
+        { "$ref": "#/$defs/categorySection" },
+        { "$ref": "#/$defs/faqSection" },
+        { "$ref": "#/$defs/reviewSection" },
+        { "$ref": "#/$defs/storySection" },
+        { "$ref": "#/$defs/ctaSection" },
+        { "$ref": "#/$defs/footerSection" },
+        { "$ref": "#/$defs/headerSection" },
+        { "$ref": "#/$defs/featureListSection" },
+        { "$ref": "#/$defs/imageTextSection" },
+        { "$ref": "#/$defs/richTextSection" }
+      ]
+    },
+    "heroSection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "hero" }, "props": { "$ref": "#/$defs/heroProps" } } }
+      ]
+    },
+    "productGridSection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "product_grid" }, "props": { "$ref": "#/$defs/productGridProps" } } }
+      ]
+    },
+    "categorySection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "category" }, "props": { "$ref": "#/$defs/categoryProps" } } }
+      ]
+    },
+    "faqSection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "faq" }, "props": { "$ref": "#/$defs/faqProps" } } }
+      ]
+    },
+    "reviewSection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "review" }, "props": { "$ref": "#/$defs/reviewProps" } } }
+      ]
+    },
+    "storySection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "story" }, "props": { "$ref": "#/$defs/storyProps" } } }
+      ]
+    },
+    "ctaSection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "cta" }, "props": { "$ref": "#/$defs/ctaProps" } } }
+      ]
+    },
+    "footerSection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "footer" }, "props": { "$ref": "#/$defs/footerProps" } } }
+      ]
+    },
+    "headerSection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "header" }, "props": { "$ref": "#/$defs/headerProps" } } }
+      ]
+    },
+    "featureListSection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "feature_list" }, "props": { "$ref": "#/$defs/featureListProps" } } }
+      ]
+    },
+    "imageTextSection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "image_text" }, "props": { "$ref": "#/$defs/imageTextProps" } } }
+      ]
+    },
+    "richTextSection": {
+      "allOf": [
+        { "$ref": "#/$defs/sectionBase" },
+        { "type": "object", "properties": { "type": { "const": "rich_text" }, "props": { "$ref": "#/$defs/richTextProps" } } }
+      ]
+    },
+    "heroProps": {
+      "type": "object", "additionalProperties": false, "required": ["headline"],
+      "properties": { "headline": { "$ref": "#/$defs/plainText" }, "subheadline": { "$ref": "#/$defs/plainText" }, "asset": { "$ref": "#/$defs/assetRef" }, "action": { "$ref": "#/$defs/action" } }
+    },
+    "productGridProps": {
+      "type": "object", "additionalProperties": false, "required": ["limit"],
+      "properties": { "product_ids": { "type": "array", "minItems": 1, "maxItems": 24, "items": { "$ref": "#/$defs/opaqueId" } }, "category_id": { "$ref": "#/$defs/opaqueId" }, "limit": { "type": "integer", "minimum": 1, "maximum": 24 }, "title": { "$ref": "#/$defs/plainText" } },
+      "anyOf": [
+        { "type": "object", "required": ["product_ids"], "properties": { "product_ids": {} } },
+        { "type": "object", "required": ["category_id"], "properties": { "category_id": {} } }
+      ]
+    },
+    "categoryProps": {
+      "type": "object", "additionalProperties": false, "required": ["category_id"],
+      "properties": { "category_id": { "$ref": "#/$defs/opaqueId" }, "title": { "$ref": "#/$defs/plainText" }, "asset": { "$ref": "#/$defs/assetRef" } }
+    },
+    "faqProps": {
+      "type": "object", "additionalProperties": false, "required": ["source"],
+      "properties": { "source": { "enum": ["knowledge", "curated"] }, "items": { "type": "array", "maxItems": 20, "items": { "$ref": "#/$defs/faqItem" } }, "title": { "$ref": "#/$defs/plainText" } },
+      "allOf": [
+        {
+          "if": { "properties": { "source": { "const": "curated" } } },
+          "then": { "type": "object", "required": ["items"], "properties": { "items": {} } }
+        }
+      ]
+    },
+    "faqItem": {
+      "type": "object", "additionalProperties": false, "required": ["question", "answer"],
+      "properties": { "question": { "$ref": "#/$defs/plainText" }, "answer": { "$ref": "#/$defs/plainText" } }
+    },
+    "reviewProps": {
+      "type": "object", "additionalProperties": false, "required": ["reviews"],
+      "properties": { "reviews": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "$ref": "#/$defs/review" } }, "title": { "$ref": "#/$defs/plainText" } }
+    },
+    "review": {
+      "type": "object", "additionalProperties": false, "required": ["quote", "author"],
+      "properties": { "quote": { "$ref": "#/$defs/plainText" }, "author": { "$ref": "#/$defs/plainText" }, "rating": { "type": "integer", "minimum": 1, "maximum": 5 } }
+    },
+    "storyProps": {
+      "type": "object", "additionalProperties": false, "required": ["title", "body"],
+      "properties": { "title": { "$ref": "#/$defs/plainText" }, "body": { "$ref": "#/$defs/plainText" }, "asset": { "$ref": "#/$defs/assetRef" } }
+    },
+    "ctaProps": {
+      "type": "object", "additionalProperties": false, "required": ["headline", "action"],
+      "properties": { "headline": { "$ref": "#/$defs/plainText" }, "body": { "$ref": "#/$defs/plainText" }, "action": { "$ref": "#/$defs/action" } }
+    },
+    "footerProps": {
+      "type": "object", "additionalProperties": false, "required": ["copyright"],
+      "properties": { "copyright": { "$ref": "#/$defs/plainText" }, "links": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/footerLink" } } }
+    },
+    "footerLink": {
+      "type": "object", "additionalProperties": false, "required": ["label", "destination"],
+      "properties": { "label": { "$ref": "#/$defs/plainText" }, "destination": { "$ref": "#/$defs/navigationItem/properties/destination" } }
+    },
+    "headerProps": {
+      "type": "object", "additionalProperties": false, "properties": { "logo": { "$ref": "#/$defs/assetRef" }, "show_navigation": { "type": "boolean" } }
+    },
+    "featureListProps": {
+      "type": "object", "additionalProperties": false, "required": ["items"],
+      "properties": { "title": { "$ref": "#/$defs/plainText" }, "items": { "type": "array", "minItems": 1, "maxItems": 12, "items": { "$ref": "#/$defs/feature" } } }
+    },
+    "feature": {
+      "type": "object", "additionalProperties": false, "required": ["title", "body"],
+      "properties": { "title": { "$ref": "#/$defs/plainText" }, "body": { "$ref": "#/$defs/plainText" }, "asset": { "$ref": "#/$defs/assetRef" } }
+    },
+    "imageTextProps": {
+      "type": "object", "additionalProperties": false, "required": ["title", "body", "asset"],
+      "properties": { "title": { "$ref": "#/$defs/plainText" }, "body": { "$ref": "#/$defs/plainText" }, "asset": { "$ref": "#/$defs/assetRef" }, "image_position": { "enum": ["left", "right"] } }
+    },
+    "richTextProps": {
+      "type": "object", "additionalProperties": false, "required": ["body"],
+      "properties": { "body": { "$ref": "#/$defs/plainText" }, "title": { "$ref": "#/$defs/plainText" } }
+    },
+    "action": {
+      "type": "object", "additionalProperties": false, "required": ["label", "destination"],
+      "properties": { "label": { "$ref": "#/$defs/plainText" }, "destination": { "$ref": "#/$defs/navigationItem/properties/destination" } }
+    }
+  }
+}
