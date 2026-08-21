@@ -1,0 +1,23 @@
+{
+  "schema_version": "1.0",
+  "tenant_id": "ten_pet_store",
+  "actor_id": "session_customer_001",
+  "actor_type": "customer_session",
+  "roles": [
+    "customer"
+  ],
+  "scopes": [
+    "site:read",
+    "product:read",
+    "commerce:read",
+    "commerce:write",
+    "lead:write",
+    "agent:run"
+  ],
+  "trace_id": "0af7651916cd43dd8448eb211c80319c",
+  "request_origin": {
+    "kind": "customer_site",
+    "request_id": "req_customer_001"
+  },
+  "site_id": "site_pet_store"
+}

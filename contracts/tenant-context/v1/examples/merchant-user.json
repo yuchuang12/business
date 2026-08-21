@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "tenant_id": "ten_pet_store",
+  "actor_id": "usr_owner_001",
+  "actor_type": "user",
+  "roles": [
+    "tenant_owner"
+  ],
+  "scopes": [
+    "tenant:read",
+    "tenant:write",
+    "site:read",
+    "site:write",
+    "site:publish",
+    "product:read",
+    "product:write",
+    "domain:read",
+    "domain:purchase",
+    "domain:write",
+    "agent:run"
+  ],
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "request_origin": {
+    "kind": "merchant_console",
+    "request_id": "req_merchant_001"
+  },
+  "site_id": "site_pet_store",
+  "project_id": "project_pet_store"
+}
