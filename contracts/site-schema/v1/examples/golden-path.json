@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0",
+  "site_id": "site_pet_store",
+  "name": "Paw & Whisker",
+  "default_locale": "en-US",
+  "theme": {
+    "schema_version": "1.0",
+    "preset": "premium",
+    "colors": {
+      "background": "#FFFDF8",
+      "surface": "#FFFFFF",
+      "text": "#211A16",
+      "muted_text": "#746A62",
+      "primary": "#8B5E3C",
+      "secondary": "#D8B08C",
+      "accent": "#E6A35C",
+      "border": "#E8DED5"
+    },
+    "typography": {
+      "font_family": "Inter",
+      "heading_weight": 700,
+      "body_weight": 400,
+      "scale": "standard"
+    },
+    "spacing": "airy",
+    "radius": "md",
+    "density": "comfortable"
+  },
+  "navigation": [
+    { "id": "nav_home", "label": "Home", "destination": { "page_id": "page_home" } },
+    { "id": "nav_shop", "label": "Shop", "destination": { "page_id": "page_shop" } }
+  ],
+  "pages": [
+    {
+      "page_id": "page_home",
+      "slug": "/",
+      "title": "Paw & Whisker",
+      "seo": { "title": "Paw & Whisker", "description": "Thoughtful goods for happier pets." },
+      "sections": [
+        {
+          "id": "section_hero",
+          "type": "hero",
+          "layout": { "container": "wide", "responsive": { "mobile": { "align": "center", "padding": "md" }, "desktop": { "align": "start", "padding": "lg" } } },
+          "props": {
+            "headline": "Thoughtful goods for happier pets",
+            "subheadline": "Everyday essentials selected with care.",
+            "asset": { "asset_id": "asset_hero", "alt": "Dog resting beside a basket" },
+            "action": { "label": "Shop essentials", "destination": { "page_id": "page_shop" } }
+          }
+        },
+        {
+          "id": "section_products",
+          "type": "product_grid",
+          "props": { "category_id": "category_essentials", "limit": 8, "title": "Popular essentials" }
+        },
+        {
+          "id": "section_faq",
+          "type": "faq",
+          "props": { "source": "knowledge", "title": "Questions, answered" }
+        },
+        {
+          "id": "section_cta",
+          "type": "cta",
+          "props": { "headline": "Find a better routine", "action": { "label": "Talk to us", "destination": { "page_id": "page_shop" } } }
+        },
+        {
+          "id": "section_footer",
+          "type": "footer",
+          "props": { "copyright": "© Paw & Whisker", "links": [{ "label": "Shop", "destination": { "page_id": "page_shop" } }] }
+        }
+      ]
+    },
+    {
+      "page_id": "page_shop",
+      "slug": "/shop",
+      "title": "Shop",
+      "seo": { "title": "Shop | Paw & Whisker", "description": "Browse our pet essentials." },
+      "sections": [
+        {
+          "id": "section_shop_products",
+          "type": "product_grid",
+          "props": { "product_ids": ["product_food"], "limit": 1, "title": "Featured product" }
+        }
+      ]
+    }
+  ],
+  "seo": {
+    "title": "Paw & Whisker",
+    "description": "Thoughtful goods for happier pets.",
+    "og_image": { "asset_id": "asset_hero", "alt": "Paw & Whisker" }
+  }
+}
