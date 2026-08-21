@@ -1,0 +1,14 @@
+{
+  "name": "@agent-commerce/site-engine",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@agent-commerce/site-schema": "file:../site-schema"
+  },
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/index.test.mjs"
+  }
+}
