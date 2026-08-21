@@ -1,0 +1,66 @@
+{
+  "contract_version": "1.0",
+  "ui_request_id": "ui_req_001",
+  "tenant_context_ref": {
+    "schema_version": "1.0",
+    "context_id": "ctx_001",
+    "tenant_id": "tenant_001",
+    "actor_id": "customer_session_001",
+    "trace_id": "0123456789abcdef0123456789abcdef"
+  },
+  "agent_run_id": "run_001",
+  "message_id": "msg_001",
+  "trace_id": "0123456789abcdef0123456789abcdef",
+  "surface": "customer_site",
+  "components": [
+    {
+      "component_id": "grid_001",
+      "type": "product_grid",
+      "accessibility": { "label": "Recommended products", "heading_level": 2 },
+      "state": { "kind": "ready" },
+      "props": {
+        "product_ids": ["product_001", "product_002"],
+        "title": "Recommended for you",
+        "columns": 2
+      },
+      "analytics": { "event_name": "product_grid.view", "component_id": "grid_001" }
+    },
+    {
+      "component_id": "confirm_001",
+      "type": "confirm_action",
+      "accessibility": { "label": "Confirm site publication" },
+      "state": { "kind": "ready" },
+      "props": {
+        "site_id": "site_001",
+        "action_id": "action_001",
+        "approval_request_id": "approval_001",
+        "action_type": "publish_site",
+        "summary": "Publish the approved site",
+        "consequences": "The site will become publicly visible.",
+        "confirm_label": "Publish",
+        "cancel_label": "Not now",
+        "expires_at": "2026-08-22T12:00:00Z"
+      }
+    },
+    {
+      "component_id": "status_001",
+      "type": "workflow_status",
+      "accessibility": { "label": "Publication status" },
+      "state": { "kind": "ready" },
+      "props": {
+        "workflow_id": "workflow_001",
+        "status": "waiting_approval",
+        "steps": [
+          { "step_id": "step_001", "label": "Validate site", "status": "succeeded" },
+          { "step_id": "step_002", "label": "Await approval", "status": "pending" }
+        ]
+      }
+    }
+  ],
+  "fallback": { "kind": "message", "text": "The request is available as text." },
+  "analytics": {
+    "event_name": "agent_ui.render",
+    "event_id": "event_001",
+    "properties": { "surface": "customer_site", "component_count": 3 }
+  }
+}
