@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-commerce-platform:tool-execution:1.0",
+  "title": "ToolExecution v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "tool_execution_id",
+    "agent_run_id",
+    "tenant_id",
+    "actor_id",
+    "trace_id",
+    "tool_name",
+    "tool_version",
+    "idempotency_key",
+    "status",
+    "attempt",
+    "retry",
+    "accounting",
+    "audit_id",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "contract_version": { "const": "1.0" },
+    "tool_execution_id": { "$ref": "#/$defs/id" },
+    "agent_run_id": { "$ref": "#/$defs/id" },
+    "workflow_instance_id": { "$ref": "#/$defs/id" },
+    "tenant_id": { "$ref": "#/$defs/id" },
+    "actor_id": { "$ref": "#/$defs/id" },
+    "trace_id": { "$ref": "#/$defs/traceId" },
+    "tool_name": { "$ref": "#/$defs/name" },
+    "tool_version": { "$ref": "#/$defs/version" },
+    "idempotency_key": { "type": "string", "minLength": 16, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+    "status": {
+      "enum": [
+        "queued",
+        "running",
+        "waiting_approval",
+        "waiting_retry",
+        "cancel_requested",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "created_at": { "$ref": "#/$defs/timestamp" },
+    "updated_at": { "$ref": "#/$defs/timestamp" },
+    "started_at": { "anyOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+    "ended_at": { "anyOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+    "input_ref": { "$ref": "#/$defs/id" },
+    "output_ref": { "$ref": "#/$defs/id" },
+    "approval_request_id": { "$ref": "#/$defs/id" },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "retry": { "$ref": "#/$defs/retry" },
+    "accounting": { "$ref": "#/$defs/accounting" },
+    "failure": {
+      "anyOf": [
+        { "$ref": "#/$defs/failure" },
+        { "type": "null" }
+      ]
+    },
+    "audit_id": { "$ref": "#/$defs/id" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "enum": ["succeeded", "failed", "cancelled"] } }, "required": ["status"] },
+      "then": {
+        "required": ["ended_at"],
+        "properties": {         "ended_at": { "$ref": "#/$defs/timestamp" } }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "waiting_approval" } }, "required": ["status"] },
+      "then": {
+        "required": ["approval_request_id"],
+        "properties": { "approval_request_id": { "$ref": "#/$defs/id" } }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$"
+    },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "traceId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$",
+      "not": { "const": "00000000000000000000000000000000" }
+    },
+    "timestamp": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$" },
+    "retry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retryable", "retry_count", "max_retries"],
+      "properties": {
+        "retryable": { "type": "boolean" },
+        "retry_count": { "type": "integer", "minimum": 0 },
+        "max_retries": { "type": "integer", "minimum": 0 },
+        "next_retry_at": { "anyOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+        "backoff_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "last_error_code": { "type": ["string", "null"], "pattern": "^[A-Z][A-Z0-9_]*$" }
+      }
+    },
+    "accounting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input_tokens", "output_tokens", "total_tokens", "cost_minor", "currency", "latency_ms"],
+      "properties": {
+        "model": { "type": ["string", "null"], "minLength": 1, "maxLength": 128 },
+        "input_tokens": { "type": "integer", "minimum": 0 },
+        "output_tokens": { "type": "integer", "minimum": 0 },
+        "total_tokens": { "type": "integer", "minimum": 0 },
+        "cost_minor": { "type": "integer", "minimum": 0 },
+        "currency": { "type": "string", "pattern": "^[A-Z]{3}$" },
+        "latency_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "code", "retryable", "message"],
+      "properties": {
+        "category": { "enum": ["validation", "authorization", "approval", "conflict", "not_found", "rate_limit", "provider", "timeout", "transient_infrastructure", "internal", "cancelled"] },
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+        "retryable": { "type": "boolean" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    }
+  }
+}
