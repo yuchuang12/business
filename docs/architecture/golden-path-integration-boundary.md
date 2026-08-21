@@ -80,6 +80,23 @@ The local fixtures use deterministic timestamps and fake providers only. They
 prove propagation and trust-boundary behavior without changing public protocol
 schemas or contacting cloud resources.
 
+## Local verification
+
+Run the complete deterministic Golden Path verification from the repository
+root:
+
+```sh
+node --test \
+  tests/commerce-golden-path.test.mjs \
+  tests/e2e/agent-runtime-golden-path.test.mjs \
+  tests/e2e/generative-ui-golden-path.test.mjs \
+  tests/e2e/golden-path-integration-boundary.test.mjs \
+  tests/contracts/*.test.mjs
+```
+
+The command uses only local fixtures and fake providers; it does not contact
+cloud resources.
+
 ## Trust boundaries and acceptance
 
 Untrusted inputs are HTTP payloads, model/tool arguments, approval callbacks,
