@@ -1,4 +1,4 @@
-# ADR-0002: Establish TenantContext v1 as an out-of-band security context
+# ADR-0003: Establish TenantContext v1 as an out-of-band security context
 
 - Status: accepted
 - Date: 2026-08-21

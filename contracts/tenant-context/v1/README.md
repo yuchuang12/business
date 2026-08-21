@@ -4,7 +4,7 @@
 - Schema: `tenant-context.schema.json`
 - Status: frozen
 - Related issue: YUC-5
-- Decision record: `docs/adr/0002-tenant-context-v1.md`
+- Decision record: `docs/adr/0003-tenant-context-v1.md`
 
 `TenantContext` 是由可信入口构造并在进程内、队列消息和工作流状态间传递的安全上下文。它不是 API、模型或 Tool 业务输入的一部分；调用方提供的同名字段没有授权意义，也不得覆盖此对象。
 
