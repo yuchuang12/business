@@ -1,0 +1,15 @@
+{
+  "envelope_type": "tool_response",
+  "contract_version": "1.0",
+  "success": false,
+  "data": null,
+  "error": {
+    "code": "TOOL_PROVIDER_FAILED",
+    "category": "provider",
+    "message": "The publishing provider is temporarily unavailable."
+  },
+  "retryable": true,
+  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "audit_id": "audit_01jtool_provider",
+  "tool_execution_id": "exec_01jtool_provider"
+}

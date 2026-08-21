@@ -1,0 +1,53 @@
+{
+  "contract_version": "1.0",
+  "codes": {
+    "TOOL_INVALID_REQUEST": {
+      "category": "validation",
+      "retryable": false
+    },
+    "TOOL_UNSUPPORTED_VERSION": {
+      "category": "validation",
+      "retryable": false
+    },
+    "TOOL_FORBIDDEN": {
+      "category": "authorization",
+      "retryable": false
+    },
+    "TOOL_APPROVAL_REQUIRED": {
+      "category": "approval",
+      "retryable": false
+    },
+    "TOOL_APPROVAL_EXPIRED": {
+      "category": "approval",
+      "retryable": false
+    },
+    "TOOL_CONFLICT": {
+      "category": "conflict",
+      "retryable": false
+    },
+    "TOOL_NOT_FOUND": {
+      "category": "not_found",
+      "retryable": false
+    },
+    "TOOL_RATE_LIMITED": {
+      "category": "rate_limit",
+      "retryable": true
+    },
+    "TOOL_PROVIDER_FAILED": {
+      "category": "provider",
+      "retryable": true
+    },
+    "TOOL_TIMEOUT": {
+      "category": "timeout",
+      "retryable": true
+    },
+    "TOOL_INFRASTRUCTURE_UNAVAILABLE": {
+      "category": "transient_infrastructure",
+      "retryable": true
+    },
+    "TOOL_INTERNAL": {
+      "category": "internal",
+      "retryable": false
+    }
+  }
+}
