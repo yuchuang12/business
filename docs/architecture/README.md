@@ -18,3 +18,7 @@
 - PostgreSQL 是关系数据与 JSON 的事实来源；Redis 仅用于缓存、幂等、锁和简单队列。
 - `tenant_id` 和 `trace_id` 必须贯穿 API、Agent、Tool、Workflow、Audit 和 Provider 调用。
 - Site Engine 只渲染受控 `SiteSchema`，不执行模型生成的任意代码。
+
+## 协议说明
+
+- [`TenantContext v1`](tenant-context-v1.md)：可信构造、传播、Repository 隔离、审计与日志边界。
