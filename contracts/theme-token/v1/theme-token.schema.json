@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:agent-commerce-platform:theme-token:1.0",
+  "title": "ThemeToken v1",
+  "description": "Constrained design tokens consumed by the Site Engine. Values are data, never executable CSS.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "preset", "colors", "typography", "spacing", "radius", "density"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "preset": { "enum": ["minimal", "tech", "premium", "natural", "vibrant"] },
+    "colors": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["background", "surface", "text", "muted_text", "primary", "secondary", "accent", "border"],
+      "properties": {
+        "background": { "$ref": "#/$defs/color" },
+        "surface": { "$ref": "#/$defs/color" },
+        "text": { "$ref": "#/$defs/color" },
+        "muted_text": { "$ref": "#/$defs/color" },
+        "primary": { "$ref": "#/$defs/color" },
+        "secondary": { "$ref": "#/$defs/color" },
+        "accent": { "$ref": "#/$defs/color" },
+        "border": { "$ref": "#/$defs/color" }
+      }
+    },
+    "typography": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["font_family", "heading_weight", "body_weight", "scale"],
+      "properties": {
+        "font_family": { "$ref": "#/$defs/tokenString" },
+        "heading_weight": { "enum": [400, 500, 600, 700, 800] },
+        "body_weight": { "enum": [400, 500, 600] },
+        "scale": { "enum": ["compact", "standard", "large"] }
+      }
+    },
+    "spacing": { "enum": ["tight", "standard", "airy"] },
+    "radius": { "enum": ["none", "sm", "md", "lg", "pill"] },
+    "density": { "enum": ["compact", "comfortable", "spacious"] }
+  },
+  "$defs": {
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "tokenString": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "pattern": "^[A-Za-z0-9 ,.'-]+$"
+    }
+  }
+}
