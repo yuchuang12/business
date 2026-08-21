@@ -1,8 +1,11 @@
 {
-  "name": "@agent-commerce/commerce-fixtures",
+  "name": "@agent-commerce/commerce",
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/golden-path-fixtures.mjs"
+    ".": "./src/index.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/commerce.test.mjs"
   }
 }
