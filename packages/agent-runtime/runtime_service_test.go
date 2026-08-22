@@ -121,9 +121,24 @@ func TestTransitionsApprovalAndTerminalProtection(t *testing.T) {
 	if _, err = service.TransitionRun(context, run.AgentRunID, "running", ""); err != nil {
 		t.Fatal(err)
 	}
+	execution, _, err := service.CreateToolExecution(context, CreateToolOptions{
+		AgentRunID: run.AgentRunID, ToolName: "site.publish", IdempotencyKey: "approval-request-01",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.TransitionTool(context, execution.ToolExecutionID, "running", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.PauseForApproval(context, execution.ToolExecutionID, "approval_100", "tool"); err != nil {
+		t.Fatal(err)
+	}
 	_, err = service.PauseForApproval(context, run.AgentRunID, "", "run")
 	requireCode(t, "APPROVAL_REQUIRED", err)
 	if _, err = service.PauseForApproval(context, run.AgentRunID, "approval_100", "run"); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.BindApproval(context, "approval_100", execution.ToolExecutionID, "input-hash"); err != nil {
 		t.Fatal(err)
 	}
 	if status, err := service.Resume(context, run.AgentRunID, "run"); err != nil || status != "running" {
@@ -143,11 +158,61 @@ func TestTransitionsApprovalAndTerminalProtection(t *testing.T) {
 	if _, err = service.TransitionRun(context, another.AgentRunID, "running", ""); err != nil {
 		t.Fatal(err)
 	}
+	anotherExecution, _, err := service.CreateToolExecution(context, CreateToolOptions{
+		AgentRunID: another.AgentRunID, ToolName: "site.publish", IdempotencyKey: "approval-request-02",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.TransitionTool(context, anotherExecution.ToolExecutionID, "running", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.PauseForApproval(context, anotherExecution.ToolExecutionID, "approval_100", "tool"); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = service.PauseForApproval(context, another.AgentRunID, "approval_100", "run"); err != nil {
+		t.Fatal(err)
+	}
+	if err = service.BindApproval(context, "approval_100", anotherExecution.ToolExecutionID, "input-hash"); err != nil {
 		t.Fatal(err)
 	}
 	_, err = revoked.Resume(context, another.AgentRunID, "run")
 	requireCode(t, "TENANT_AUTHORIZATION_REVOKED", err)
+}
+
+func TestIdempotencyClaimsRejectChangedRequestAndAuditRejections(t *testing.T) {
+	service := NewAgentRuntimeService(nil, nil, nil)
+	context := serviceContext("tenant_a", "actor_a")
+	run, _, err := service.CreateRun(context, CreateRunOptions{IdempotencyKey: "run-request-0000002"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = service.CreateRun(context, CreateRunOptions{IdempotencyKey: "run-request-0000002", AgentType: "customer"})
+	requireCode(t, "RUNTIME_CONFLICT", err)
+
+	first, _, err := service.CreateToolExecution(context, CreateToolOptions{
+		AgentRunID: run.AgentRunID, ToolName: "site.publish", IdempotencyKey: "tool-request-000002", CanonicalInput: map[string]any{"site_id": "site_001"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = service.CreateToolExecution(context, CreateToolOptions{
+		AgentRunID: run.AgentRunID, ToolName: "site.publish", IdempotencyKey: "tool-request-000002", CanonicalInput: map[string]any{"site_id": "site_002"},
+	})
+	requireCode(t, "RUNTIME_CONFLICT", err)
+	if _, err = service.TransitionTool(context, first.ToolExecutionID, "completed", ""); err == nil {
+		t.Fatal("illegal transition was accepted")
+	}
+	audits := service.Store.AuditRecords()
+	rejected := 0
+	for _, audit := range audits {
+		if audit.Outcome == "rejected" {
+			rejected++
+		}
+	}
+	if rejected < 3 {
+		t.Fatalf("rejected audits = %d, want at least 3", rejected)
+	}
 }
 
 func TestRetryCancellationAndRecovery(t *testing.T) {

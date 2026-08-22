@@ -233,14 +233,29 @@ type InMemoryRuntimeStore struct {
 	mu          sync.RWMutex
 	runs        map[string]AgentRun
 	tools       map[string]ToolExecution
-	idempotency map[string]string
+	idempotency map[string]idempotencyClaim
+	approvals   map[string]ApprovalBinding
 	audit       []AuditRecord
+}
+
+type idempotencyClaim struct {
+	TargetID    string
+	RequestHash string
+}
+
+// ProductionRuntimeStore is the minimum persistence boundary for durable workers.
+// A production adapter must atomically claim a request and reconcile uncertain
+// in-flight provider effects before allowing a restart to resume execution.
+type ProductionRuntimeStore interface {
+	ClaimIdempotency(scope, requestHash, targetID string) (existingID string, conflict bool, err error)
+	ClaimRecoverableWork(tenantID string, limit int) ([]string, error)
+	ReconcileInFlightEffect(tenantID, toolExecutionID, idempotencyKey string) (known bool, err error)
 }
 
 func NewInMemoryRuntimeStore() *InMemoryRuntimeStore {
 	return &InMemoryRuntimeStore{
 		runs: map[string]AgentRun{}, tools: map[string]ToolExecution{},
-		idempotency: map[string]string{},
+		idempotency: map[string]idempotencyClaim{}, approvals: map[string]ApprovalBinding{},
 	}
 }
 
