@@ -3,6 +3,7 @@ package agentruntime
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"sort"
 	"sync"
 )
 
@@ -147,9 +148,19 @@ func (fixture *AgentRuntimeFixture) ExecuteTool(request ExecuteToolRequest) (Too
 		fixture.remember(scope, hash, response)
 		return response, nil
 	}
+	if request.HighRisk && request.ApprovalID != "" {
+		fixture.mu.Lock()
+		pending, found := fixture.pending[request.ApprovalID]
+		fixture.mu.Unlock()
+		if !found || pending.TenantID != context.TenantID || pending.ActorID != context.ActorID ||
+			pending.TraceID != context.TraceID || pending.ToolName != request.ToolName ||
+			pending.InputHash != hash || pending.IdempotencyKey != request.IdempotencyKey {
+			return fixture.failure(context, request.ToolName, request.IdempotencyKey, "TOOL_APPROVAL_EXPIRED"), nil
+		}
+	}
 	execution, duplicate, err := fixture.Service.CreateToolExecution(context, CreateToolOptions{
 		AgentRunID: run.AgentRunID, ToolName: request.ToolName, ToolVersion: ContractVersion,
-		IdempotencyKey: request.IdempotencyKey, MaxRetries: 2,
+		IdempotencyKey: request.IdempotencyKey, MaxRetries: 2, CanonicalInput: request.Input,
 	})
 	if err != nil {
 		return ToolResponse{}, err
@@ -175,6 +186,9 @@ func (fixture *AgentRuntimeFixture) ExecuteTool(request ExecuteToolRequest) (Too
 		}
 		if run.Status == "running" {
 			if _, err := fixture.Service.PauseForApproval(context, run.AgentRunID, approvalID, "run"); err != nil {
+				return ToolResponse{}, err
+			}
+			if err := fixture.Service.BindApproval(context, approvalID, execution.ToolExecutionID, hash); err != nil {
 				return ToolResponse{}, err
 			}
 		}
@@ -348,9 +362,11 @@ func fixtureRequestHash(context TenantContext, toolName string, input map[string
 }
 
 func stringSliceAny(values []string) []any {
-	result := make([]any, len(values))
-	for index := range values {
-		result[index] = values[index]
+	sorted := append([]string(nil), values...)
+	sort.Strings(sorted)
+	result := make([]any, len(sorted))
+	for index := range sorted {
+		result[index] = sorted[index]
 	}
 	return result
 }

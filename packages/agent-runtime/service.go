@@ -5,6 +5,7 @@ type ApprovalBinding struct {
 	ToolName          string
 	ToolVersion       string
 	IdempotencyKey    string
+	InputHash         string
 }
 
 type ApprovalValidator func(TenantContext, ApprovalBinding) bool
@@ -31,6 +32,7 @@ type CreateToolOptions struct {
 	IdempotencyKey string
 	MaxRetries     int
 	MaxRetriesSet  bool
+	CanonicalInput map[string]any
 }
 
 func NewAgentRuntimeService(store *InMemoryRuntimeStore, approval ApprovalValidator, authorization AuthorizationValidator) *AgentRuntimeService {
@@ -58,21 +60,32 @@ func (service *AgentRuntimeService) CreateRun(context TenantContext, options Cre
 		options.MaxRetries = 3
 	}
 	if options.AgentType != "merchant" && options.AgentType != "customer" && options.AgentType != "system" {
+		_, _ = service.RecordAudit(context, "run.create", "agent_run", "", "rejected")
 		return AgentRun{}, false, runtimeError("RUNTIME_VALIDATION", "Invalid agent type.")
 	}
 	if options.WorkflowInstanceID != "" {
 		if err := ensureID(options.WorkflowInstanceID); err != nil {
+			_, _ = service.RecordAudit(context, "run.create", "agent_run", "", "rejected")
 			return AgentRun{}, false, err
 		}
 	}
 	var result AgentRun
 	duplicate := false
+	var operationErr error
 	service.Store.withLock(func() {
 		scope := ""
 		if options.IdempotencyKey != "" {
 			scope = context.TenantID + ":agent-run:" + options.IdempotencyKey
-			if existingID := service.Store.idempotency[scope]; existingID != "" {
-				result = service.Store.runs[existingID]
+			requestHash := canonicalRequestHash(context, map[string]any{
+				"agent_type": options.AgentType, "workflow_instance_id": options.WorkflowInstanceID, "max_retries": options.MaxRetries,
+			})
+			if claim, ok := service.Store.idempotency[scope]; ok {
+				if claim.RequestHash != requestHash {
+					operationErr = runtimeError("RUNTIME_CONFLICT", "Idempotency key is bound to a different request.")
+					service.auditLocked(context, "run.create", "agent_run", "", "rejected")
+					return
+				}
+				result = service.Store.runs[claim.TargetID]
 				duplicate = true
 				return
 			}
@@ -86,11 +99,13 @@ func (service *AgentRuntimeService) CreateRun(context TenantContext, options Cre
 		}
 		service.Store.runs[result.AgentRunID] = result
 		if scope != "" {
-			service.Store.idempotency[scope] = result.AgentRunID
+			service.Store.idempotency[scope] = idempotencyClaim{TargetID: result.AgentRunID, RequestHash: canonicalRequestHash(context, map[string]any{
+				"agent_type": options.AgentType, "workflow_instance_id": options.WorkflowInstanceID, "max_retries": options.MaxRetries,
+			})}
 		}
 		service.auditLocked(context, "run.create", "agent_run", result.AgentRunID, "accepted")
 	})
-	return result, duplicate, nil
+	return result, duplicate, operationErr
 }
 
 func (service *AgentRuntimeService) CreateToolExecution(context TenantContext, options CreateToolOptions) (ToolExecution, bool, error) {
@@ -105,6 +120,7 @@ func (service *AgentRuntimeService) CreateToolExecution(context TenantContext, o
 		options.MaxRetries = 3
 	}
 	if !nameID.MatchString(options.ToolName) || !version.MatchString(options.ToolVersion) || len(options.IdempotencyKey) < 16 || !nameID.MatchString(options.IdempotencyKey) {
+		_, _ = service.RecordAudit(context, "tool.create", "tool_execution", "", "rejected")
 		return ToolExecution{}, false, runtimeError("RUNTIME_VALIDATION", "Tool name and idempotency key are required.")
 	}
 	var result ToolExecution
@@ -121,8 +137,16 @@ func (service *AgentRuntimeService) CreateToolExecution(context TenantContext, o
 			return
 		}
 		scope := fmtScope(context.TenantID, options.ToolName, options.ToolVersion, options.IdempotencyKey)
-		if existingID := service.Store.idempotency[scope]; existingID != "" {
-			result = service.Store.tools[existingID]
+		requestHash := canonicalRequestHash(context, map[string]any{
+			"agent_run_id": options.AgentRunID, "tool_name": options.ToolName, "tool_version": options.ToolVersion, "input": options.CanonicalInput,
+		})
+		if claim, ok := service.Store.idempotency[scope]; ok {
+			if claim.RequestHash != requestHash {
+				operationErr = runtimeError("RUNTIME_CONFLICT", "Idempotency key is bound to a different request.")
+				service.auditLocked(context, "tool.create", "tool_execution", "", "rejected")
+				return
+			}
+			result = service.Store.tools[claim.TargetID]
 			duplicate = true
 			return
 		}
@@ -135,7 +159,7 @@ func (service *AgentRuntimeService) CreateToolExecution(context TenantContext, o
 			Attempt: 1, Retry: defaultRetry(options.MaxRetries), Accounting: defaultAccounting(), AuditID: generatedID("audit"),
 		}
 		service.Store.tools[result.ToolExecutionID] = result
-		service.Store.idempotency[scope] = result.ToolExecutionID
+		service.Store.idempotency[scope] = idempotencyClaim{TargetID: result.ToolExecutionID, RequestHash: requestHash}
 		service.auditLocked(context, "tool.create", "tool_execution", result.ToolExecutionID, "accepted")
 	})
 	return result, duplicate, operationErr
@@ -192,15 +216,48 @@ func (service *AgentRuntimeService) TransitionTool(context TenantContext, id, to
 }
 
 func (service *AgentRuntimeService) PauseForApproval(context TenantContext, id, approvalRequestID, kind string) (string, error) {
+	context, err := ValidateTenantContext(context)
+	if err != nil {
+		return "", err
+	}
 	if !nameID.MatchString(approvalRequestID) {
+		_, _ = service.RecordAudit(context, "approval.pause", kind, id, "rejected")
 		return "", runtimeError("APPROVAL_REQUIRED", "Approval reference is required.")
 	}
+
 	if kind == "run" {
 		record, err := service.TransitionRun(context, id, "waiting_approval", approvalRequestID)
 		return record.Status, err
 	}
 	record, err := service.TransitionTool(context, id, "waiting_approval", approvalRequestID)
 	return record.Status, err
+}
+
+// BindApproval records the immutable tool request that an approval authorizes.
+// Call it after the matching run and tool have entered waiting_approval.
+func (service *AgentRuntimeService) BindApproval(context TenantContext, approvalID, toolExecutionID, inputHash string) error {
+	context, err := ValidateTenantContext(context)
+	if err != nil {
+		return err
+	}
+	if !nameID.MatchString(approvalID) || inputHash == "" {
+		_, _ = service.RecordAudit(context, "approval.bind", "tool_execution", toolExecutionID, "rejected")
+		return runtimeError("APPROVAL_REQUIRED", "Approval binding is invalid.")
+	}
+	service.Store.withLock(func() {
+		record, lookupErr := service.ownedToolLocked(context, toolExecutionID)
+		if lookupErr != nil || record.Status != "waiting_approval" || record.ApprovalRequestID != approvalID {
+			err = runtimeError("APPROVAL_INVALID", "Approval does not match the paused tool execution.")
+			service.auditLocked(context, "approval.bind", "tool_execution", toolExecutionID, "rejected")
+			return
+		}
+		service.Store.approvals[approvalID] = ApprovalBinding{
+			ApprovalRequestID: approvalID, ToolName: record.ToolName, ToolVersion: record.ToolVersion,
+			IdempotencyKey: record.IdempotencyKey, InputHash: inputHash,
+		}
+		service.auditLocked(context, "approval.bind", "tool_execution", toolExecutionID, "accepted")
+	})
+	return err
 }
 
 func (service *AgentRuntimeService) WaitForRetry(context TenantContext, id, errorCode string, backoffMS int, kind string) (string, error) {
@@ -273,10 +330,12 @@ func (service *AgentRuntimeService) Resume(context TenantContext, id, kind strin
 			}
 			if !service.authorized(context, record.AgentRunID) {
 				err = runtimeError("TENANT_AUTHORIZATION_REVOKED", "Current authorization does not permit resume.")
+				service.auditLocked(context, "lifecycle.resume", "agent_run", id, "rejected")
 				return
 			}
-			if record.Status == "waiting_approval" && !service.approved(context, record.ApprovalRequestID, "", "", "") {
+			if record.Status == "waiting_approval" && !service.approved(context, record.ApprovalRequestID, "", "", "", "") {
 				err = runtimeError("APPROVAL_INVALID", "Approval reference is missing or invalid.")
+				service.auditLocked(context, "lifecycle.resume", "agent_run", id, "rejected")
 				return
 			}
 			record, err = service.transitionRunLocked(context, id, "running", "")
@@ -290,10 +349,12 @@ func (service *AgentRuntimeService) Resume(context TenantContext, id, kind strin
 		}
 		if !service.authorized(context, record.ToolExecutionID) {
 			err = runtimeError("TENANT_AUTHORIZATION_REVOKED", "Current authorization does not permit resume.")
+			service.auditLocked(context, "lifecycle.resume", "tool_execution", id, "rejected")
 			return
 		}
-		if record.Status == "waiting_approval" && !service.approved(context, record.ApprovalRequestID, record.ToolName, record.ToolVersion, record.IdempotencyKey) {
+		if record.Status == "waiting_approval" && !service.approved(context, record.ApprovalRequestID, record.ToolName, record.ToolVersion, record.IdempotencyKey, "") {
 			err = runtimeError("APPROVAL_INVALID", "Approval reference is missing or invalid.")
+			service.auditLocked(context, "lifecycle.resume", "tool_execution", id, "rejected")
 			return
 		}
 		record, err = service.transitionToolLocked(context, id, "running", "")
@@ -317,10 +378,12 @@ func (service *AgentRuntimeService) Retry(context TenantContext, id string) (Too
 		if current.Status != "waiting_retry" || !current.Retry.Retryable || current.Retry.RetryCount >= current.Retry.MaxRetries ||
 			!service.authorized(context, current.ToolExecutionID) {
 			err = runtimeError("RETRY_NOT_ALLOWED", "ToolExecution is not eligible for retry.")
+			service.auditLocked(context, "tool.retry", "tool_execution", id, "rejected")
 			return
 		}
-		if current.ApprovalRequestID != "" && !service.approved(context, current.ApprovalRequestID, current.ToolName, current.ToolVersion, current.IdempotencyKey) {
+		if current.ApprovalRequestID != "" && !service.approved(context, current.ApprovalRequestID, current.ToolName, current.ToolVersion, current.IdempotencyKey, "") {
 			err = runtimeError("APPROVAL_INVALID", "Approval reference is missing or invalid.")
+			service.auditLocked(context, "tool.retry", "tool_execution", id, "rejected")
 			return
 		}
 		next = current
@@ -420,6 +483,7 @@ func (service *AgentRuntimeService) ownedToolLocked(context TenantContext, id st
 func (service *AgentRuntimeService) transitionRunLocked(context TenantContext, id, to, approval string) (AgentRun, error) {
 	record, err := service.ownedRunLocked(context, id)
 	if err != nil {
+		service.auditLocked(context, "lifecycle.transition", "agent_run", id, "rejected")
 		return AgentRun{}, err
 	}
 	if !runTransition(record.Status, to) {
@@ -448,6 +512,7 @@ func (service *AgentRuntimeService) transitionRunLocked(context TenantContext, i
 func (service *AgentRuntimeService) transitionToolLocked(context TenantContext, id, to, approval string) (ToolExecution, error) {
 	record, err := service.ownedToolLocked(context, id)
 	if err != nil {
+		service.auditLocked(context, "lifecycle.transition", "tool_execution", id, "rejected")
 		return ToolExecution{}, err
 	}
 	if !toolTransition(record.Status, to) {
@@ -483,8 +548,13 @@ func (service *AgentRuntimeService) auditLocked(context TenantContext, action, t
 	return id
 }
 
-func (service *AgentRuntimeService) approved(context TenantContext, approval, tool, toolVersion, key string) bool {
-	return approval != "" && service.ApprovalValidator(context, ApprovalBinding{ApprovalRequestID: approval, ToolName: tool, ToolVersion: toolVersion, IdempotencyKey: key})
+func (service *AgentRuntimeService) approved(context TenantContext, approval, tool, toolVersion, key, inputHash string) bool {
+	binding, ok := service.Store.approvals[approval]
+	if !ok || binding.ApprovalRequestID != approval || (tool != "" && (binding.ToolName != tool || binding.ToolVersion != toolVersion || binding.IdempotencyKey != key)) ||
+		(inputHash != "" && binding.InputHash != inputHash) {
+		return false
+	}
+	return service.ApprovalValidator(context, binding)
 }
 
 func (service *AgentRuntimeService) authorized(context TenantContext, id string) bool {
@@ -543,3 +613,14 @@ func toolTransition(from, to string) bool {
 }
 func stringPointer(value string) *string { return &value }
 func intPointer(value int) *int          { return &value }
+
+func canonicalRequestHash(context TenantContext, request map[string]any) string {
+	return canonical(map[string]any{
+		"context": map[string]any{
+			"tenant_id": context.TenantID, "actor_id": context.ActorID, "actor_type": context.ActorType,
+			"roles": stringSliceAny(context.Roles), "scopes": stringSliceAny(context.Scopes), "trace_id": context.TraceID,
+			"origin": map[string]any{"kind": context.RequestOrigin.Kind, "request_id": context.RequestOrigin.RequestID},
+		},
+		"request": request,
+	})
+}
