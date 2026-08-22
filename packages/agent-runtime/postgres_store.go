@@ -18,6 +18,28 @@ type PostgresRuntimeStore struct {
 
 var _ ProductionRuntimeStore = (*PostgresRuntimeStore)(nil)
 
+// OperationalAuditQuery is scoped to the trusted context's tenant and trace.
+// CorrelationID narrows provider-effect events without exposing payloads.
+type OperationalAuditQuery struct {
+	CorrelationID string
+	Limit         int
+}
+
+// OperationalAuditEvent is the payload-free event shape used by operators to
+// diagnose one tenant-scoped trace.
+type OperationalAuditEvent struct {
+	AuditID       string
+	TenantID      string
+	TraceID       string
+	CorrelationID string
+	ActorID       string
+	Action        string
+	TargetType    string
+	TargetID      string
+	Outcome       string
+	CreatedAt     time.Time
+}
+
 func NewPostgresRuntimeStore(db *sql.DB) (*PostgresRuntimeStore, error) {
 	if db == nil {
 		return nil, errors.New("postgres DB is required")
@@ -30,6 +52,7 @@ func (store *PostgresRuntimeStore) ClaimIdempotency(scope, requestHash, targetID
 	if !ok || !opaqueID.MatchString(tenantID) || requestHash == "" || targetID == "" {
 		return "", false, runtimeError("RUNTIME_VALIDATION", "Idempotency claim is invalid.")
 	}
+
 	ctx := context.Background()
 	tx, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -62,6 +85,51 @@ func (store *PostgresRuntimeStore) ClaimIdempotency(scope, requestHash, targetID
 		return "", false, fmt.Errorf("commit idempotency claim: %w", err)
 	}
 	return existingID, existingHash != requestHash, nil
+}
+
+// QueryOperationalAudit returns redacted lifecycle and provider-effect events
+// for exactly the caller's trusted tenant and trace.
+func (store *PostgresRuntimeStore) QueryOperationalAudit(tenant TenantContext, query OperationalAuditQuery) ([]OperationalAuditEvent, error) {
+	tenant, err := ValidateTenantContext(tenant)
+	if err != nil {
+		return nil, err
+	}
+	if query.Limit == 0 {
+		query.Limit = 100
+	}
+	if query.Limit < 1 || query.Limit > 500 || (query.CorrelationID != "" && !nameID.MatchString(query.CorrelationID)) {
+		return nil, runtimeError("RUNTIME_VALIDATION", "Operational audit query is invalid.")
+	}
+	rows, err := store.db.QueryContext(context.Background(), `
+		SELECT audit_id, tenant_id, trace_id, correlation_id, actor_id, action, target_type, target_id, outcome, created_at
+		FROM (
+			SELECT audit_id, tenant_id, trace_id, '' AS correlation_id, actor_id, action, target_type, target_id, outcome, created_at
+			FROM agent_runtime_audit_refs
+			WHERE tenant_id = $1 AND trace_id = $2 AND $3 = ''
+			UNION ALL
+			SELECT audit_id, tenant_id, trace_id, correlation_id, actor_id, 'provider_effect.reconcile', 'provider_effect',
+				effect_id, COALESCE(reconciliation_state, 'pending'), created_at
+			FROM provider_effects
+			WHERE tenant_id = $1 AND trace_id = $2 AND ($3 = '' OR correlation_id = $3)
+		) events
+		ORDER BY created_at DESC
+		LIMIT $4`, tenant.TenantID, tenant.TraceID, query.CorrelationID, query.Limit)
+	if err != nil {
+		return nil, fmt.Errorf("query operational audit: %w", err)
+	}
+	defer rows.Close()
+	events := []OperationalAuditEvent{}
+	for rows.Next() {
+		var event OperationalAuditEvent
+		if err := rows.Scan(&event.AuditID, &event.TenantID, &event.TraceID, &event.CorrelationID, &event.ActorID, &event.Action, &event.TargetType, &event.TargetID, &event.Outcome, &event.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan operational audit: %w", err)
+		}
+		events = append(events, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate operational audit: %w", err)
+	}
+	return events, nil
 }
 
 func (store *PostgresRuntimeStore) ClaimRecoverableWork(tenantID string, limit int) ([]string, error) {

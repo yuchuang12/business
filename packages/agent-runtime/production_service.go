@@ -14,11 +14,18 @@ type ProductionAgentRuntimeService struct {
 	Store                  *PostgresRuntimeStore
 	ApprovalValidator      ApprovalValidator
 	AuthorizationValidator AuthorizationValidator
+	Observer               RuntimeObserver
 }
 
 // NewProductionAgentRuntimeService constructs the durable runtime service.
 // Call Migrate before constructing the service during application startup.
 func NewProductionAgentRuntimeService(store *PostgresRuntimeStore, approval ApprovalValidator, authorization AuthorizationValidator) (*ProductionAgentRuntimeService, error) {
+	return NewProductionAgentRuntimeServiceWithObserver(store, approval, authorization, SlogRuntimeObserver{})
+}
+
+// NewProductionAgentRuntimeServiceWithObserver constructs a durable service
+// with a caller-provided observability sink.
+func NewProductionAgentRuntimeServiceWithObserver(store *PostgresRuntimeStore, approval ApprovalValidator, authorization AuthorizationValidator, observer RuntimeObserver) (*ProductionAgentRuntimeService, error) {
 	if store == nil {
 		return nil, errors.New("postgres runtime store is required")
 	}
@@ -28,7 +35,7 @@ func NewProductionAgentRuntimeService(store *PostgresRuntimeStore, approval Appr
 	if authorization == nil {
 		authorization = func(TenantContext, string) bool { return true }
 	}
-	return &ProductionAgentRuntimeService{Store: store, ApprovalValidator: approval, AuthorizationValidator: authorization}, nil
+	return &ProductionAgentRuntimeService{Store: store, ApprovalValidator: approval, AuthorizationValidator: authorization, Observer: observer}, nil
 }
 
 func (service *ProductionAgentRuntimeService) CreateRun(tenant TenantContext, options CreateRunOptions) (AgentRun, bool, error) {
@@ -60,7 +67,9 @@ func (service *ProductionAgentRuntimeService) CreateRun(tenant TenantContext, op
 	requestHash := canonicalRequestHash(tenant, map[string]any{
 		"agent_type": options.AgentType, "workflow_instance_id": options.WorkflowInstanceID, "max_retries": options.MaxRetries,
 	})
-	return service.Store.createRun(tenant, run, options.IdempotencyKey, requestHash)
+	result, duplicate, err := service.Store.createRun(tenant, run, options.IdempotencyKey, requestHash)
+	service.observe(tenant, RuntimeEvent{Operation: "agent_run.create", Outcome: outcome(err), AgentRunID: result.AgentRunID, ErrorCode: ErrorCode(err)})
+	return result, duplicate, err
 }
 
 func (service *ProductionAgentRuntimeService) CreateToolExecution(tenant TenantContext, options CreateToolOptions) (ToolExecution, bool, error) {
@@ -88,7 +97,9 @@ func (service *ProductionAgentRuntimeService) CreateToolExecution(tenant TenantC
 	requestHash := canonicalRequestHash(tenant, map[string]any{
 		"agent_run_id": options.AgentRunID, "tool_name": options.ToolName, "tool_version": options.ToolVersion, "input": options.CanonicalInput,
 	})
-	return service.Store.createTool(tenant, tool, requestHash)
+	result, duplicate, err := service.Store.createTool(tenant, tool, requestHash)
+	service.observe(tenant, RuntimeEvent{Operation: "tool_execution.create", Outcome: outcome(err), AgentRunID: tool.AgentRunID, ToolExecutionID: result.ToolExecutionID, ErrorCode: ErrorCode(err)})
+	return result, duplicate, err
 }
 
 func (service *ProductionAgentRuntimeService) Run(tenant TenantContext, id string) (AgentRun, error) {
@@ -112,7 +123,9 @@ func (service *ProductionAgentRuntimeService) TransitionRun(tenant TenantContext
 	if err != nil {
 		return AgentRun{}, err
 	}
-	return service.Store.transitionRun(tenant, id, to, approval)
+	result, err := service.Store.transitionRun(tenant, id, to, approval)
+	service.observe(tenant, RuntimeEvent{Operation: "agent_run.transition", Outcome: outcome(err), AgentRunID: id, ApprovalID: approval, ErrorCode: ErrorCode(err)})
+	return result, err
 }
 
 func (service *ProductionAgentRuntimeService) TransitionTool(tenant TenantContext, id, to, approval string) (ToolExecution, error) {
@@ -120,7 +133,9 @@ func (service *ProductionAgentRuntimeService) TransitionTool(tenant TenantContex
 	if err != nil {
 		return ToolExecution{}, err
 	}
-	return service.Store.transitionTool(tenant, id, to, approval)
+	result, err := service.Store.transitionTool(tenant, id, to, approval)
+	service.observe(tenant, RuntimeEvent{Operation: "tool_execution.transition", Outcome: outcome(err), AgentRunID: result.AgentRunID, ToolExecutionID: id, ApprovalID: approval, ErrorCode: ErrorCode(err)})
+	return result, err
 }
 
 // Recover claims persisted running work and fails any tool with an unresolved
@@ -137,8 +152,15 @@ func (service *ProductionAgentRuntimeService) Recover(tenant TenantContext) ([]s
 	recovered := make([]string, 0, len(ids))
 	for _, id := range ids {
 		if err := service.Store.recoverRun(tenant, id); err != nil {
+			service.observe(tenant, RuntimeEvent{Operation: "runtime.recover", Outcome: "rejected", AgentRunID: id, ErrorCode: ErrorCode(err)})
 			return nil, err
 		}
+		run, runErr := service.Store.run(tenant, id)
+		event := RuntimeEvent{Operation: "runtime.recover", Outcome: "accepted", AgentRunID: id}
+		if runErr == nil && run.Failure != nil {
+			event.ErrorCode = run.Failure.Code
+		}
+		service.observe(tenant, event)
 		recovered = append(recovered, id)
 	}
 	return recovered, nil
@@ -151,7 +173,9 @@ func (service *ProductionAgentRuntimeService) ClaimProviderEffect(tenant TenantC
 	if err != nil {
 		return ProviderEffectClaim{}, err
 	}
-	return service.Store.ClaimProviderEffect(tenant, effect)
+	result, err := service.Store.ClaimProviderEffect(tenant, effect)
+	service.observe(tenant, RuntimeEvent{Operation: "provider_effect.claim", Outcome: outcome(err), CorrelationID: effect.CorrelationID, AgentRunID: effect.AgentRunID, ToolExecutionID: effect.ToolExecutionID, ApprovalID: effect.ApprovalRequestID, ErrorCode: ErrorCode(err)})
+	return result, err
 }
 
 // ReconcileProviderEffect returns unknown_in_flight unless the persisted
@@ -161,7 +185,9 @@ func (service *ProductionAgentRuntimeService) ReconcileProviderEffect(tenant Ten
 	if err != nil {
 		return ProviderEffectReconciliation{}, err
 	}
-	return service.Store.ReconcileProviderEffect(tenant, effect)
+	result, err := service.Store.ReconcileProviderEffect(tenant, effect)
+	service.observe(tenant, RuntimeEvent{Operation: "provider_effect.reconcile", Outcome: outcome(err), CorrelationID: effect.CorrelationID, AgentRunID: effect.AgentRunID, ToolExecutionID: effect.ToolExecutionID, ProviderState: result.State, ErrorCode: ErrorCode(err)})
+	return result, err
 }
 
 func (service *ProductionAgentRuntimeService) RecordProviderEffect(tenant TenantContext, effect ProviderEffectBinding, result ProviderEffectReconciliation) error {
@@ -169,7 +195,26 @@ func (service *ProductionAgentRuntimeService) RecordProviderEffect(tenant Tenant
 	if err != nil {
 		return err
 	}
-	return service.Store.RecordProviderEffect(tenant, effect, result)
+	err = service.Store.RecordProviderEffect(tenant, effect, result)
+	service.observe(tenant, RuntimeEvent{Operation: "provider_effect.record", Outcome: outcome(err), CorrelationID: effect.CorrelationID, AgentRunID: effect.AgentRunID, ToolExecutionID: effect.ToolExecutionID, ProviderState: result.State, ErrorCode: ErrorCode(err)})
+	return err
+}
+
+func (service *ProductionAgentRuntimeService) observe(tenant TenantContext, event RuntimeEvent) {
+	if service.Observer == nil {
+		return
+	}
+	event.Timestamp = mustTime()
+	event.TenantID = tenant.TenantID
+	event.TraceID = tenant.TraceID
+	service.Observer.RecordRuntimeEvent(event)
+}
+
+func outcome(err error) string {
+	if err != nil {
+		return "rejected"
+	}
+	return "accepted"
 }
 
 func (store *PostgresRuntimeStore) createRun(tenant TenantContext, run AgentRun, key, requestHash string) (AgentRun, bool, error) {
