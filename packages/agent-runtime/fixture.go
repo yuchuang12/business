@@ -32,11 +32,21 @@ type AgentRuntimeFixture struct {
 	mu            sync.Mutex
 	requests      map[string]fixtureRequest
 	lastExecution map[string]string
+	pending       map[string]fixtureApproval
 }
 
 type fixtureRequest struct {
 	Hash     string
 	Response ToolResponse
+}
+
+type fixtureApproval struct {
+	TenantID       string
+	ActorID        string
+	TraceID        string
+	ToolName       string
+	InputHash      string
+	IdempotencyKey string
 }
 
 type FixtureStart struct {
@@ -63,7 +73,7 @@ type ExecuteToolRequest struct {
 func NewAgentRuntimeFixture(products []Product, approve FixtureApprover, provider ProductProvider) *AgentRuntimeFixture {
 	fixture := &AgentRuntimeFixture{
 		products: products, approve: approve, productSource: provider,
-		requests: map[string]fixtureRequest{}, lastExecution: map[string]string{},
+		requests: map[string]fixtureRequest{}, lastExecution: map[string]string{}, pending: map[string]fixtureApproval{},
 	}
 	if fixture.approve == nil {
 		fixture.approve = func(FixtureApprovalRequest) bool { return false }
@@ -150,13 +160,8 @@ func (fixture *AgentRuntimeFixture) ExecuteTool(request ExecuteToolRequest) (Too
 			return ToolResponse{}, err
 		}
 	}
-	if request.HighRisk && !fixture.approve(FixtureApprovalRequest{
-		ApprovalID: request.ApprovalID, Context: context, Input: request.Input, IdempotencyKey: request.IdempotencyKey,
-	}) {
-		approvalID := request.ApprovalID
-		if approvalID == "" {
-			approvalID = generatedID("approval")
-		}
+	if request.HighRisk && request.ApprovalID == "" {
+		approvalID := generatedID("approval")
 		if execution.Status == "queued" {
 			execution, err = fixture.Service.TransitionTool(context, execution.ToolExecutionID, "running", "")
 			if err != nil {
@@ -173,7 +178,29 @@ func (fixture *AgentRuntimeFixture) ExecuteTool(request ExecuteToolRequest) (Too
 				return ToolResponse{}, err
 			}
 		}
+		fixture.mu.Lock()
+		fixture.pending[approvalID] = fixtureApproval{
+			TenantID: context.TenantID, ActorID: context.ActorID, TraceID: context.TraceID,
+			ToolName: request.ToolName, InputHash: hash, IdempotencyKey: request.IdempotencyKey,
+		}
+		fixture.mu.Unlock()
 		return toolFailure("TOOL_APPROVAL_REQUIRED", context.TraceID, execution.AuditID, execution.ToolExecutionID, request.IdempotencyKey), nil
+	}
+	if request.HighRisk {
+		fixture.mu.Lock()
+		pending, found := fixture.pending[request.ApprovalID]
+		fixture.mu.Unlock()
+		if !found || pending.TenantID != context.TenantID || pending.ActorID != context.ActorID ||
+			pending.TraceID != context.TraceID || pending.ToolName != request.ToolName ||
+			pending.InputHash != hash || pending.IdempotencyKey != request.IdempotencyKey ||
+			!fixture.approve(FixtureApprovalRequest{
+				ApprovalID: request.ApprovalID, Context: context, Input: request.Input, IdempotencyKey: request.IdempotencyKey,
+			}) {
+			return fixture.failure(context, request.ToolName, request.IdempotencyKey, "TOOL_APPROVAL_EXPIRED"), nil
+		}
+		fixture.mu.Lock()
+		delete(fixture.pending, request.ApprovalID)
+		fixture.mu.Unlock()
 	}
 	if execution.Status == "waiting_approval" {
 		if _, err := fixture.Service.TransitionTool(context, execution.ToolExecutionID, "running", ""); err != nil {

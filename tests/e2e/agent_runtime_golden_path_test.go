@@ -56,7 +56,7 @@ func TestForeignAndReservedTenantInputFailClosed(t *testing.T) {
 
 func TestApprovalRetryIdempotencyAndConflict(t *testing.T) {
 	approvalRuntime := agentruntime.NewAgentRuntimeFixture([]agentruntime.Product{fixtureProduct}, func(request agentruntime.FixtureApprovalRequest) bool {
-		return request.ApprovalID == "approval_1"
+		return request.ApprovalID != ""
 	}, nil)
 	started, err := approvalRuntime.StartRun(customerContext)
 	if err != nil {
@@ -75,7 +75,7 @@ func TestApprovalRetryIdempotencyAndConflict(t *testing.T) {
 	}
 	resumed, err := approvalRuntime.ExecuteTool(agentruntime.ExecuteToolRequest{
 		Context: customerContext, RunID: started.Run.AgentRunID, ToolName: "product.lookup",
-		Input: map[string]any{"product_id": fixtureProduct.ProductID}, IdempotencyKey: "approval-product-lookup-1", HighRisk: true, ApprovalID: "approval_1",
+		Input: map[string]any{"product_id": fixtureProduct.ProductID}, IdempotencyKey: "approval-product-lookup-1", HighRisk: true, ApprovalID: run.ApprovalRequestID,
 	})
 	if err != nil || !resumed.Success {
 		t.Fatalf("resume = %+v, %v", resumed, err)
