@@ -3,6 +3,7 @@ const DEFINITIONS = {
   COMMERCE_FORBIDDEN: ["authorization", false],
   COMMERCE_NOT_FOUND: ["not_found", false],
   COMMERCE_CONFLICT: ["conflict", false],
+  COMMERCE_DUPLICATE_SKU: ["conflict", false],
   COMMERCE_APPROVAL_REQUIRED: ["approval", false],
   COMMERCE_APPROVAL_INVALID: ["approval", false],
   COMMERCE_PROVIDER_FAILED: ["provider", true],
