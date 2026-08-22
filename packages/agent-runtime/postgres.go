@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -15,10 +16,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-//go:embed migrations/001_agent_runtime.sql
+//go:embed migrations/*.sql
 var agentRuntimeMigrationFS embed.FS
-
-const agentRuntimeMigration = "001_agent_runtime.sql"
 
 // PostgresConfig is the production connection configuration. URL takes
 // precedence; the remaining fields are used to build a URL when it is absent.
@@ -99,10 +98,17 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	if db == nil {
 		return errors.New("postgres DB is required")
 	}
-	script, err := agentRuntimeMigrationFS.ReadFile("migrations/" + agentRuntimeMigration)
+	entries, err := agentRuntimeMigrationFS.ReadDir("migrations")
 	if err != nil {
-		return fmt.Errorf("read agent-runtime migration: %w", err)
+		return fmt.Errorf("read agent-runtime migrations: %w", err)
 	}
+	migrations := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
+			migrations = append(migrations, entry.Name())
+		}
+	}
+	sort.Strings(migrations)
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin agent-runtime migration: %w", err)
@@ -114,16 +120,23 @@ func Migrate(ctx context.Context, db *sql.DB) error {
 	)`); err != nil {
 		return fmt.Errorf("create migration ledger: %w", err)
 	}
-	var applied bool
-	if err = tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM agent_runtime_schema_migrations WHERE version = $1)`, agentRuntimeMigration).Scan(&applied); err != nil {
-		return fmt.Errorf("read migration ledger: %w", err)
-	}
-	if !applied {
-		if _, err = tx.ExecContext(ctx, string(script)); err != nil {
-			return fmt.Errorf("apply %s: %w", agentRuntimeMigration, err)
+	for _, migration := range migrations {
+		var applied bool
+		if err = tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM agent_runtime_schema_migrations WHERE version = $1)`, migration).Scan(&applied); err != nil {
+			return fmt.Errorf("read migration ledger: %w", err)
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO agent_runtime_schema_migrations(version) VALUES ($1)`, agentRuntimeMigration); err != nil {
-			return fmt.Errorf("record %s: %w", agentRuntimeMigration, err)
+		if applied {
+			continue
+		}
+		script, readErr := agentRuntimeMigrationFS.ReadFile("migrations/" + migration)
+		if readErr != nil {
+			return fmt.Errorf("read agent-runtime migration: %w", readErr)
+		}
+		if _, err = tx.ExecContext(ctx, string(script)); err != nil {
+			return fmt.Errorf("apply %s: %w", migration, err)
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO agent_runtime_schema_migrations(version) VALUES ($1)`, migration); err != nil {
+			return fmt.Errorf("record %s: %w", migration, err)
 		}
 	}
 	if err = tx.Commit(); err != nil {
