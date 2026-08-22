@@ -71,6 +71,7 @@ export class AgentRuntimeFixture {
     this.runs = new Map();
     this.executions = new Map();
     this.idempotency = new Map();
+    this.pendingApprovals = new Map();
     this.sequence = 0;
   }
 
@@ -119,9 +120,17 @@ export class AgentRuntimeFixture {
     if (!trusted.scopes.includes("product:read")) {
       return this.recordFailure(run, trusted, toolName, idempotencyKey, "TOOL_FORBIDDEN");
     }
-    if (highRisk && (!approvalId || !this.approve({ approvalId, context: trusted, input, idempotencyKey }))) {
+    if (highRisk && !approvalId) {
       run.status = "waiting_approval";
       run.approval_request_id = approvalId ?? this.next("approval");
+      this.pendingApprovals.set(run.approval_request_id, {
+        tenant_id: trusted.tenant_id,
+        actor_id: trusted.actor_id,
+        trace_id: trusted.trace_id,
+        tool_name: toolName,
+        input: clone(input),
+        idempotency_key: idempotencyKey
+      });
       const executionId = this.next("exec");
       const auditId = this.next("audit");
       this.executions.set(executionId, {
@@ -134,6 +143,23 @@ export class AgentRuntimeFixture {
         created_at: "2026-08-22T00:00:00Z", updated_at: "2026-08-22T00:00:00Z"
       });
       return failure("TOOL_APPROVAL_REQUIRED", trusted.trace_id, auditId, executionId, idempotencyKey);
+    }
+    if (highRisk) {
+      const pending = this.pendingApprovals.get(approvalId);
+      if (!pending && this.approve({ approvalId, context: trusted, input, idempotencyKey })) {
+        return this.perform({ trusted, run, toolName, input, idempotencyKey, requestHash, attempt, key });
+      }
+      const matches = pending &&
+        pending.tenant_id === trusted.tenant_id &&
+        pending.actor_id === trusted.actor_id &&
+        pending.trace_id === trusted.trace_id &&
+        pending.tool_name === toolName &&
+        pending.idempotency_key === idempotencyKey &&
+        canonical(pending.input) === canonical(input);
+      if (!matches || !this.approve({ approvalId, context: trusted, input, idempotencyKey })) {
+        return this.recordFailure(run, trusted, toolName, idempotencyKey, "TOOL_APPROVAL_EXPIRED");
+      }
+      this.pendingApprovals.delete(approvalId);
     }
     return this.perform({ trusted, run, toolName, input, idempotencyKey, requestHash, attempt, key });
   }
