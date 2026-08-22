@@ -9,6 +9,12 @@ function hash(value) {
   return JSON.stringify(value);
 }
 
+function requireScope(context, ...scopes) {
+  if (!scopes.some((scope) => context.scopes.includes(scope))) {
+    fail("COMMERCE_FORBIDDEN", "The actor is not authorized for this commerce operation.");
+  }
+}
+
 export class CommerceService {
   constructor({ store, approvalValidator = () => true, provider } = {}) {
     if (!store) fail("COMMERCE_INVALID_REQUEST", "A commerce store is required.");
@@ -43,16 +49,17 @@ export class CommerceService {
   createCustomer(context, input = {}) { return this.#create(context, "customers", input, "customer"); }
 
   createProduct(context, input = {}) {
+    const trusted = requireTenantContext(context);
     if (!input.name || typeof input.name !== "string" || typeof input.price_minor !== "number" || input.price_minor < 0) {
       fail("COMMERCE_INVALID_REQUEST", "Product name and non-negative price_minor are required.");
     }
-    const trusted = requireTenantContext(context);
     if (input.category_id) this.repositories.categories.get(trusted, input.category_id);
     return this.#create(trusted, "products", { ...input, canonical_id: undefined }, "product");
   }
 
   lookupProducts(context, { query = "", category_id, page = 1, page_size: pageSize = 20 } = {}) {
     const trusted = requireTenantContext(context);
+    requireScope(trusted, "product:read", "commerce:read");
     if (typeof query !== "string" || (category_id !== undefined && typeof category_id !== "string")) fail("COMMERCE_INVALID_REQUEST", "Product lookup filters are invalid.");
     const result = this.repositories.products.list(trusted, {
       page, pageSize,
@@ -68,6 +75,7 @@ export class CommerceService {
 
   async lookupProductFromProvider(context, { product_id: productId, site_id: siteId } = {}) {
     const trusted = requireTenantContext(context);
+    requireScope(trusted, "product:read", "commerce:read");
     if (!this.provider || typeof this.provider.getProduct !== "function") {
       fail("COMMERCE_PROVIDER_UNAVAILABLE", "A commerce provider is not configured.");
     }
@@ -90,6 +98,7 @@ export class CommerceService {
 
   getCartSummary(context, cartId) {
     const trusted = requireTenantContext(context);
+    requireScope(trusted, "cart:write", "commerce:read", "commerce:write");
     const cart = this.repositories.carts.get(trusted, cartId);
     const items = (cart.items ?? []).map((item) => {
       const product = this.repositories.products.get(trusted, item.product_id);
@@ -102,6 +111,7 @@ export class CommerceService {
 
   addToCart(context, { cart_id: cartId, product_id: productId, quantity = 1, idempotency_key: key } = {}) {
     const trusted = requireTenantContext(context);
+    requireScope(trusted, "cart:write", "commerce:write");
     if (!Number.isInteger(quantity) || quantity < 1 || typeof key !== "string" || key.length < 16) fail("COMMERCE_INVALID_REQUEST", "Cart item and idempotency key are required.");
     const product = this.repositories.products.get(trusted, productId);
     const scope = `${trusted.tenant_id}:cart.add:${key}`;
@@ -121,8 +131,76 @@ export class CommerceService {
     return updated;
   }
 
+  removeFromCart(context, { cart_id: cartId, product_id: productId, idempotency_key: key } = {}) {
+    const trusted = requireTenantContext(context);
+    requireScope(trusted, "cart:write", "commerce:write");
+    if (typeof productId !== "string" || typeof key !== "string" || key.length < 16) {
+      fail("COMMERCE_INVALID_REQUEST", "Cart item and idempotency key are required.");
+    }
+    const scope = `${trusted.tenant_id}:cart.remove:${key}`;
+    const requestHash = hash({ cartId, productId });
+    const prior = this.store.idempotency.get(scope);
+    if (prior) {
+      if (prior.request_hash !== requestHash) fail("COMMERCE_CONFLICT", "Idempotency key was already used with different input.");
+      return structuredClone(prior.response);
+    }
+    const cart = this.repositories.carts.get(trusted, cartId);
+    const items = (cart.items ?? []).filter((item) => item.product_id !== productId);
+    const updated = this.repositories.carts.update(trusted, cart.id, { items });
+    this.store.idempotency.set(scope, { request_hash: requestHash, response: updated });
+    this.#audit(trusted, "cart.remove", updated, "accepted", { product_id: productId });
+    return updated;
+  }
+
+  updateCartItem(context, { cart_id: cartId, product_id: productId, quantity, idempotency_key: key } = {}) {
+    const trusted = requireTenantContext(context);
+    requireScope(trusted, "cart:write", "commerce:write");
+    if (typeof productId !== "string" || !Number.isInteger(quantity) || quantity < 0 ||
+        typeof key !== "string" || key.length < 16) {
+      fail("COMMERCE_INVALID_REQUEST", "Cart item quantity and idempotency key are required.");
+    }
+    const scope = `${trusted.tenant_id}:cart.update:${key}`;
+    const requestHash = hash({ cartId, productId, quantity });
+    const prior = this.store.idempotency.get(scope);
+    if (prior) {
+      if (prior.request_hash !== requestHash) fail("COMMERCE_CONFLICT", "Idempotency key was already used with different input.");
+      return structuredClone(prior.response);
+    }
+    const cart = this.repositories.carts.get(trusted, cartId);
+    const items = [...(cart.items ?? [])];
+    const index = items.findIndex((item) => item.product_id === productId);
+    if (index < 0) fail("COMMERCE_NOT_FOUND", "Cart item is not visible.");
+    if (quantity === 0) items.splice(index, 1); else items[index] = { ...items[index], quantity };
+    const updated = this.repositories.carts.update(trusted, cart.id, { items });
+    this.store.idempotency.set(scope, { request_hash: requestHash, response: updated });
+    this.#audit(trusted, "cart.update", updated, "accepted", { product_id: productId, quantity });
+    return updated;
+  }
+
+  recommendationCandidates(context, { query = "", category_id, product_ids, page = 1, page_size: pageSize = 20 } = {}) {
+    const trusted = requireTenantContext(context);
+    requireScope(trusted, "product:read", "commerce:read");
+    if (product_ids !== undefined && (!Array.isArray(product_ids) || product_ids.some((id) => typeof id !== "string"))) {
+      fail("COMMERCE_INVALID_REQUEST", "Recommendation product_ids are invalid.");
+    }
+    const result = this.lookupProducts(trusted, { query, category_id, page, page_size: pageSize });
+    if (product_ids) {
+      const requested = new Set(product_ids);
+      result.items = result.items.filter((product) => requested.has(product.product_id));
+      result.total = result.items.length;
+      result.has_next = false;
+    }
+    this.#audit(trusted, "product.recommendation_candidates", null, "accepted", { count: result.items.length });
+    return result;
+  }
+
+  getRecommendationCandidates(context, input = {}) {
+    return this.recommendationCandidates(context, input);
+  }
+
   captureLead(context, input = {}) {
     const trusted = requireTenantContext(context);
+    requireScope(trusted, "lead:write", "commerce:write");
     assertBusinessInput(input);
     if (typeof input.email !== "string" && typeof input.phone !== "string") fail("COMMERCE_INVALID_REQUEST", "A lead requires email or phone.");
     const key = input.idempotency_key;
@@ -140,14 +218,20 @@ export class CommerceService {
     return lead;
   }
 
+  createLead(context, input = {}) {
+    return this.captureLead(context, input);
+  }
+
   createCart(context, input = {}) {
     const trusted = requireTenantContext(context);
+    requireScope(trusted, "cart:write", "commerce:write");
     if (input.customer_id) this.repositories.customers.get(trusted, input.customer_id);
     return this.#create(trusted, "carts", { ...input, items: input.items ?? [] }, "cart");
   }
 
   createOrder(context, { cart_id: cartId, idempotency_key: key, approval_reference: approval } = {}) {
     const trusted = requireTenantContext(context);
+    requireScope(trusted, "order:write", "commerce:write");
     if (typeof key !== "string" || key.length < 16) fail("COMMERCE_INVALID_REQUEST", "Order idempotency key is required.");
     const cart = this.repositories.carts.get(trusted, cartId);
     if (!approval || !this.approvalValidator(approval, trusted, { cart_id: cart.id, idempotency_key: key })) {
@@ -171,9 +255,11 @@ export class CommerceService {
 
   async createApprovedProviderOrder(context, { cart_id: cartId, idempotency_key: key, approval_reference: approval } = {}) {
     const trusted = requireTenantContext(context);
+    requireScope(trusted, "order:write", "commerce:write");
     if (!this.provider || typeof this.provider.createOrder !== "function") {
       fail("COMMERCE_PROVIDER_UNAVAILABLE", "A commerce provider is not configured.");
     }
+
     if (typeof key !== "string" || key.length < 16) fail("COMMERCE_INVALID_REQUEST", "Order idempotency key is required.");
     const cart = this.repositories.carts.get(trusted, cartId);
     const summary = this.getCartSummary(trusted, cart.id);
@@ -211,6 +297,10 @@ export class CommerceService {
       this.#audit(trusted, "provider.order.create", cart, "rejected", { code: error.unknownInFlight ? "COMMERCE_UNKNOWN_IN_FLIGHT" : error.code });
       fail(error.unknownInFlight ? "COMMERCE_UNKNOWN_IN_FLIGHT" : error.code, "Commerce provider request failed.");
     }
+  }
+
+  createOrderIntent(context, input = {}) {
+    return this.createOrder(context, input);
   }
 
   get(context, resource, id) { return this.repositories[resource].get(requireTenantContext(context), id); }
