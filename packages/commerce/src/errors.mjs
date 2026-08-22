@@ -4,7 +4,13 @@ const DEFINITIONS = {
   COMMERCE_NOT_FOUND: ["not_found", false],
   COMMERCE_CONFLICT: ["conflict", false],
   COMMERCE_APPROVAL_REQUIRED: ["approval", false],
-  COMMERCE_APPROVAL_INVALID: ["approval", false]
+  COMMERCE_APPROVAL_INVALID: ["approval", false],
+  COMMERCE_PROVIDER_FAILED: ["provider", true],
+  COMMERCE_PROVIDER_TIMEOUT: ["timeout", true],
+  COMMERCE_PROVIDER_RATE_LIMITED: ["rate_limit", true],
+  COMMERCE_PROVIDER_UNAVAILABLE: ["provider", true],
+  COMMERCE_PROVIDER_REJECTED: ["provider", false],
+  COMMERCE_UNKNOWN_IN_FLIGHT: ["provider", true]
 };
 
 export class CommerceError extends Error {

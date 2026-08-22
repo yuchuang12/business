@@ -14,3 +14,10 @@ Run the focused contract tests with:
 ```sh
 node --test tests/commerce-golden-path.test.mjs
 ```
+
+`CommerceProviderClient` is the production HTTP adapter. It resolves credentials
+by trusted `TenantContext`, sends only tenant and trace correlation metadata,
+uses bounded retries for retryable failures, and never caches provider data.
+`createApprovedProviderOrder` requires the existing approval validator and
+reconciles an unknown in-flight write by idempotency key before reporting
+failure. `FakeCommerceProvider` is the deterministic CI adapter.
