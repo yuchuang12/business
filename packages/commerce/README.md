@@ -21,3 +21,18 @@ uses bounded retries for retryable failures, and never caches provider data.
 `createApprovedProviderOrder` requires the existing approval validator and
 reconciles an unknown in-flight write by idempotency key before reporting
 failure. `FakeCommerceProvider` is the deterministic CI adapter.
+
+## Catalog operations
+
+`CommerceService` exposes tenant-scoped `createProduct`, `getProduct`,
+`listProducts`, `updateProduct`, `createCategory`, `getCategory`,
+`listCategories`, and `updateCategory` operations. Product writes validate
+names, SKU uniqueness, ISO currency codes, prices, and category ownership.
+
+`importProducts(context, { rows, idempotency_key })` accepts already-parsed CSV or
+spreadsheet rows. Each row must contain `name`, `sku`, `price` (or integer
+`price_minor`), and `currency`; optional `image`, `images`, `description`, and
+`category_id` values are preserved after tenant validation. The result contains
+`imported`, `updated`, `failed`, `success_count`, `failure_count`, and
+row-numbered `errors`. The idempotency key is tenant-scoped; replay returns the
+original result, while a changed payload returns `COMMERCE_CONFLICT`.

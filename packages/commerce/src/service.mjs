@@ -15,6 +15,54 @@ function requireScope(context, ...scopes) {
   }
 }
 
+const CURRENCY = /^[A-Z]{3}$/;
+const ZERO_DECIMAL_CURRENCIES = new Set(["BIF", "CLP", "DJF", "GNF", "ISK", "JPY", "KMF", "KRW", "PYG", "RWF", "UGX", "VND", "VUV", "XAF", "XOF", "XPF"]);
+
+function validateCurrency(currency) {
+  if (typeof currency !== "string" || !CURRENCY.test(currency)) {
+    fail("COMMERCE_INVALID_REQUEST", "Currency must be an uppercase ISO 4217 code.");
+  }
+  return currency;
+}
+
+function parsePrice(value, currency) {
+  const digits = ZERO_DECIMAL_CURRENCIES.has(currency) ? 0 : 2;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value < 0 || Math.round(value * (10 ** digits)) !== value * (10 ** digits)) {
+      fail("COMMERCE_INVALID_REQUEST", "Price format is invalid.");
+    }
+    return Math.round(value * (10 ** digits));
+  }
+  if (typeof value !== "string") fail("COMMERCE_INVALID_REQUEST", "Price format is invalid.");
+  const normalized = value.trim();
+  const pattern = digits === 0 ? /^\d+$/ : /^\d+(?:\.\d{1,2})?$/;
+  if (!pattern.test(normalized)) fail("COMMERCE_INVALID_REQUEST", "Price format is invalid.");
+  const [whole, fraction = ""] = normalized.split(".");
+  return Number(whole) * (10 ** digits) + Number((fraction + "0".repeat(digits)).slice(0, digits));
+}
+
+function normalizeProductInput(input, { requireSku = false } = {}) {
+  assertBusinessInput(input);
+  const name = typeof input.name === "string" ? input.name.trim() : "";
+  const sku = typeof input.sku === "string" ? input.sku.trim() : "";
+  if (!name || (requireSku && !sku)) fail("COMMERCE_INVALID_REQUEST", "Product name and SKU are required.");
+  const currency = validateCurrency(input.currency ?? "USD");
+  const priceMinor = input.price_minor !== undefined
+    ? (Number.isInteger(input.price_minor) && input.price_minor >= 0 ? input.price_minor : null)
+    : parsePrice(input.price, currency);
+  if (priceMinor === null) fail("COMMERCE_INVALID_REQUEST", "price_minor must be a non-negative integer.");
+  return { ...input, name, sku, currency, price_minor: priceMinor };
+}
+
+function ensureUniqueSku(service, context, sku, excludingId) {
+  if (!sku) return;
+  const duplicate = service.repositories.products.list(context, {
+    page: 1, pageSize: 100,
+    filter: (product) => product.sku === sku && product.id !== excludingId
+  }).items[0];
+  if (duplicate) fail("COMMERCE_DUPLICATE_SKU", "SKU is already used by another product.");
+}
+
 export class CommerceService {
   constructor({ store, approvalValidator = () => true, provider } = {}) {
     if (!store) fail("COMMERCE_INVALID_REQUEST", "A commerce store is required.");
@@ -44,17 +92,124 @@ export class CommerceService {
     if (input.merchant_id) this.repositories.merchants.get(trusted, input.merchant_id);
     return this.#create(trusted, "sites", input, "site");
   }
-  createCategory(context, input = {}) { return this.#create(context, "categories", input, "category"); }
+  createCategory(context, input = {}) {
+    const trusted = requireTenantContext(context);
+    requireScope(trusted, "product:write", "commerce:write");
+    assertBusinessInput(input);
+    if (typeof input.name !== "string" || !input.name.trim()) fail("COMMERCE_INVALID_REQUEST", "Category name is required.");
+    return this.#create(trusted, "categories", { ...input, name: input.name.trim() }, "category");
+  }
   createAsset(context, input = {}) { return this.#create(context, "assets", input, "asset"); }
   createCustomer(context, input = {}) { return this.#create(context, "customers", input, "customer"); }
 
   createProduct(context, input = {}) {
     const trusted = requireTenantContext(context);
-    if (!input.name || typeof input.name !== "string" || typeof input.price_minor !== "number" || input.price_minor < 0) {
-      fail("COMMERCE_INVALID_REQUEST", "Product name and non-negative price_minor are required.");
+    const normalized = normalizeProductInput(input);
+    ensureUniqueSku(this, trusted, normalized.sku);
+    if (normalized.category_id) this.repositories.categories.get(trusted, normalized.category_id);
+    return this.#create(trusted, "products", { ...normalized, canonical_id: undefined }, "product");
+  }
+
+  updateProduct(context, productId, changes = {}) {
+    const trusted = requireTenantContext(context);
+    requireScope(trusted, "product:write", "commerce:write");
+    const current = this.repositories.products.get(trusted, productId);
+    const normalized = normalizeProductInput({
+      name: current.name, sku: current.sku, price_minor: current.price_minor,
+      currency: current.currency, description: current.description, image: current.image,
+      category_id: current.category_id, ...changes
+    });
+    ensureUniqueSku(this, trusted, normalized.sku, productId);
+    if (normalized.category_id) this.repositories.categories.get(trusted, normalized.category_id);
+    const product = this.repositories.products.update(trusted, productId, { ...normalized, canonical_id: undefined });
+    this.#audit(trusted, "product.update", product, "accepted");
+    return product;
+  }
+
+  updateCategory(context, categoryId, changes = {}) {
+    const trusted = requireTenantContext(context);
+    requireScope(trusted, "product:write", "commerce:write");
+    assertBusinessInput(changes);
+    if (changes.name !== undefined && (typeof changes.name !== "string" || !changes.name.trim())) {
+      fail("COMMERCE_INVALID_REQUEST", "Category name is required.");
     }
-    if (input.category_id) this.repositories.categories.get(trusted, input.category_id);
-    return this.#create(trusted, "products", { ...input, canonical_id: undefined }, "product");
+    const category = this.repositories.categories.update(trusted, categoryId, {
+      ...changes, ...(changes.name ? { name: changes.name.trim() } : {})
+    });
+    this.#audit(trusted, "category.update", category, "accepted");
+    return category;
+  }
+
+  getProduct(context, productId) {
+    return this.get(context, "products", productId);
+  }
+
+  getCategory(context, categoryId) {
+    return this.get(context, "categories", categoryId);
+  }
+
+  listProducts(context, options = {}) {
+    return this.lookupProducts(context, options);
+  }
+
+  listCategories(context, options = {}) {
+    const trusted = requireTenantContext(context);
+    requireScope(trusted, "product:read", "commerce:read");
+    return this.repositories.categories.list(trusted, options);
+  }
+
+  importProducts(context, { rows, idempotency_key: key } = {}) {
+    const trusted = requireTenantContext(context);
+    requireScope(trusted, "product:write", "commerce:write");
+    if (!Array.isArray(rows) || rows.length === 0 || rows.length > 1000 ||
+        typeof key !== "string" || key.length < 16) {
+      fail("COMMERCE_INVALID_REQUEST", "Import rows and an idempotency key are required.");
+    }
+    const scope = `${trusted.tenant_id}:product.import:${key}`;
+    const requestHash = hash(rows);
+    const prior = this.store.idempotency.get(scope);
+    if (prior) {
+      if (prior.request_hash !== requestHash) fail("COMMERCE_CONFLICT", "Idempotency key was already used with different input.");
+      return structuredClone(prior.response);
+    }
+
+    const seen = new Set();
+    const result = {
+      imported: 0, updated: 0, failed: 0, total: rows.length,
+      success_count: 0, failure_count: 0, errors: [], products: []
+    };
+    rows.forEach((row, index) => {
+      try {
+        assertBusinessInput(row);
+        const normalized = normalizeProductInput(row, { requireSku: true });
+        if (seen.has(normalized.sku)) fail("COMMERCE_DUPLICATE_SKU", "SKU is duplicated in the import.");
+        seen.add(normalized.sku);
+        if (normalized.category_id) this.repositories.categories.get(trusted, normalized.category_id);
+        const existing = this.repositories.products.list(trusted, {
+          page: 1, pageSize: 100, filter: (product) => product.sku === normalized.sku
+        }).items[0];
+        const product = existing
+          ? this.updateProduct(trusted, existing.id, { ...normalized, id: undefined })
+          : (ensureUniqueSku(this, trusted, normalized.sku), this.#create(trusted, "products", { ...normalized, canonical_id: undefined }, "product"));
+        if (existing) result.updated += 1; else result.imported += 1;
+        result.success_count += 1;
+        result.products.push({ row: index + 1, product });
+      } catch (error) {
+        if (!(error instanceof CommerceError)) throw error;
+        result.failed += 1;
+        result.failure_count += 1;
+        result.errors.push({ row: index + 1, code: error.code, category: error.category, message: error.message });
+      }
+    });
+    this.store.idempotency.set(scope, { request_hash: requestHash, response: result });
+    this.#audit(trusted, "product.import", null, result.failed ? "partial" : "accepted", {
+      imported: result.imported, updated: result.updated, failed: result.failed
+    });
+    return structuredClone(result);
+  }
+
+  importProductRows(context, input = {}) {
+    return this.importProducts(context, input);
   }
 
   lookupProducts(context, { query = "", category_id, page = 1, page_size: pageSize = 20 } = {}) {
