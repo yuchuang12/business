@@ -249,7 +249,9 @@ type idempotencyClaim struct {
 type ProductionRuntimeStore interface {
 	ClaimIdempotency(scope, requestHash, targetID string) (existingID string, conflict bool, err error)
 	ClaimRecoverableWork(tenantID string, limit int) ([]string, error)
-	ReconcileInFlightEffect(tenantID, toolExecutionID, idempotencyKey string) (known bool, err error)
+	ClaimProviderEffect(context TenantContext, effect ProviderEffectBinding) (ProviderEffectClaim, error)
+	ReconcileProviderEffect(context TenantContext, effect ProviderEffectBinding) (ProviderEffectReconciliation, error)
+	RecordProviderEffect(context TenantContext, effect ProviderEffectBinding, result ProviderEffectReconciliation) error
 }
 
 func NewInMemoryRuntimeStore() *InMemoryRuntimeStore {

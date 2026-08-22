@@ -1,5 +1,10 @@
 package agentruntime
 
+import (
+	"crypto/sha256"
+	"encoding/hex"
+)
+
 type ApprovalBinding struct {
 	ApprovalRequestID string
 	ToolName          string
@@ -615,12 +620,13 @@ func stringPointer(value string) *string { return &value }
 func intPointer(value int) *int          { return &value }
 
 func canonicalRequestHash(context TenantContext, request map[string]any) string {
-	return canonical(map[string]any{
+	sum := sha256.Sum256([]byte(canonical(map[string]any{
 		"context": map[string]any{
 			"tenant_id": context.TenantID, "actor_id": context.ActorID, "actor_type": context.ActorType,
 			"roles": stringSliceAny(context.Roles), "scopes": stringSliceAny(context.Scopes), "trace_id": context.TraceID,
 			"origin": map[string]any{"kind": context.RequestOrigin.Kind, "request_id": context.RequestOrigin.RequestID},
 		},
 		"request": request,
-	})
+	})))
+	return hex.EncodeToString(sum[:])
 }
