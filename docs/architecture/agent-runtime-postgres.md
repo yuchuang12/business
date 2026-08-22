@@ -12,6 +12,8 @@ defer db.Close()
 if err := agentruntime.Migrate(ctx, db); err != nil { return err }
 store, err := agentruntime.NewPostgresRuntimeStore(db)
 if err != nil { return err }
+runtime, err := agentruntime.NewProductionAgentRuntimeService(store, approvalValidator, authorizationValidator)
+if err != nil { return err }
 ```
 
 `DATABASE_URL` is preferred. Without it, `PGHOST`, `PGPORT`, `PGUSER`,
@@ -24,11 +26,14 @@ fixture and is not selected by the production bootstrap.
 Rollback is performed by deploying the previous application/schema version;
 the migration is not edited in place.
 
-`PostgresRuntimeStore` is the production durable-worker adapter. It atomically
-claims idempotency scopes and provider effects, leases running work during
-recovery with `FOR UPDATE SKIP LOCKED`, and persists reconciliation outcomes.
-An absent or unrecorded provider reconciliation is returned as
-`unknown_in_flight`; callers must not auto-retry it.
+`ProductionAgentRuntimeService` is the production durable-worker boundary. It
+persists creates, lifecycle transitions, idempotency claims, audit references,
+and restart recovery through `PostgresRuntimeStore`; it never falls back to
+`InMemoryRuntimeStore`. `PostgresRuntimeStore` leases running work during
+recovery with `FOR UPDATE SKIP LOCKED` and persists provider-effect
+reconciliation outcomes. An absent or unrecorded reconciliation is
+`unknown_in_flight`; recovery fails that run and its running tool executions
+closed rather than retrying or assuming success.
 
 Integration tests can call `NewPostgresTestDatabase(t)`. They require
 `TEST_DATABASE_ADMIN_URL` (or `DATABASE_URL`), create a uniquely named database,
@@ -41,4 +46,5 @@ Validate the adapter locally with:
 ```sh
 go test ./packages/agent-runtime
 go test -race ./packages/agent-runtime
+TEST_DATABASE_ADMIN_URL=postgres://... go test ./packages/agent-runtime -run TestProductionServicePersistsRestartRecoveryAndFailsClosed
 ```
