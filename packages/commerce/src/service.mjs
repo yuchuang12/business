@@ -1,6 +1,7 @@
 import { assertBusinessInput, requireTenantContext } from "./context.mjs";
-import { fail } from "./errors.mjs";
+import { CommerceError, fail } from "./errors.mjs";
 import { TenantRepository } from "./repository.mjs";
+import { ProviderError } from "./provider.mjs";
 
 function hash(value) {
   if (Array.isArray(value)) return `[${value.map(hash).join(",")}]`;
@@ -9,10 +10,11 @@ function hash(value) {
 }
 
 export class CommerceService {
-  constructor({ store, approvalValidator = () => true } = {}) {
+  constructor({ store, approvalValidator = () => true, provider } = {}) {
     if (!store) fail("COMMERCE_INVALID_REQUEST", "A commerce store is required.");
     this.store = store;
     this.approvalValidator = approvalValidator;
+    this.provider = provider;
     this.repositories = Object.fromEntries([
       ["merchants", "merchant"], ["sites", "site"], ["products", "product"], ["categories", "category"],
       ["assets", "asset"], ["customers", "customer"], ["carts", "cart"], ["orders", "order"], ["leads", "lead"]
@@ -62,6 +64,28 @@ export class CommerceService {
     }));
     this.#audit(trusted, "product.lookup", null, "accepted", { count: result.items.length });
     return result;
+  }
+
+  async lookupProductFromProvider(context, { product_id: productId, site_id: siteId } = {}) {
+    const trusted = requireTenantContext(context);
+    if (!this.provider || typeof this.provider.getProduct !== "function") {
+      fail("COMMERCE_PROVIDER_UNAVAILABLE", "A commerce provider is not configured.");
+    }
+    try {
+      const product = await this.provider.getProduct(trusted, { product_id: productId, site_id: siteId });
+      if (!product || product.tenant_id !== trusted.tenant_id) {
+        fail("COMMERCE_PROVIDER_FAILED", "Provider returned an invalid product.");
+      }
+      this.#audit(trusted, "product.provider_lookup", null, "accepted");
+      return structuredClone(product);
+    } catch (error) {
+      if (error instanceof CommerceError) throw error;
+      if (error instanceof ProviderError) {
+        this.#audit(trusted, "product.provider_lookup", null, "rejected", { code: error.code });
+        fail(error.unknownInFlight ? "COMMERCE_UNKNOWN_IN_FLIGHT" : error.code, "Commerce provider request failed.");
+      }
+      throw error;
+    }
   }
 
   getCartSummary(context, cartId) {
@@ -130,6 +154,7 @@ export class CommerceService {
       this.#audit(trusted, "order.create", cart, "rejected", { code: "COMMERCE_APPROVAL_REQUIRED" });
       fail("COMMERCE_APPROVAL_REQUIRED", "Approval is required for order creation.");
     }
+
     const scope = `${trusted.tenant_id}:order.create:${key}`;
     const requestHash = hash({ cart_id: cart.id, approval_reference: approval });
     const prior = this.store.idempotency.get(scope);
@@ -142,6 +167,50 @@ export class CommerceService {
     this.store.idempotency.set(scope, { request_hash: requestHash, response: order });
     this.#audit(trusted, "order.create", order, "accepted");
     return order;
+  }
+
+  async createApprovedProviderOrder(context, { cart_id: cartId, idempotency_key: key, approval_reference: approval } = {}) {
+    const trusted = requireTenantContext(context);
+    if (!this.provider || typeof this.provider.createOrder !== "function") {
+      fail("COMMERCE_PROVIDER_UNAVAILABLE", "A commerce provider is not configured.");
+    }
+    if (typeof key !== "string" || key.length < 16) fail("COMMERCE_INVALID_REQUEST", "Order idempotency key is required.");
+    const cart = this.repositories.carts.get(trusted, cartId);
+    const summary = this.getCartSummary(trusted, cart.id);
+    if (!approval || !this.approvalValidator(approval, trusted, { cart_id: cart.id, idempotency_key: key })) {
+      this.#audit(trusted, "provider.order.create", cart, "rejected", { code: "COMMERCE_APPROVAL_REQUIRED" });
+      fail("COMMERCE_APPROVAL_REQUIRED", "Approval is required for provider order creation.");
+    }
+    const scope = `${trusted.tenant_id}:provider.order.create:${key}`;
+    const requestHash = hash({ cart_id: cart.id, items: summary.items, total_minor: summary.total_minor, approval_reference: approval });
+    const prior = this.store.idempotency.get(scope);
+    if (prior) {
+      if (prior.request_hash !== requestHash) fail("COMMERCE_CONFLICT", "Idempotency key was already used with different input.");
+      return structuredClone(prior.response);
+    }
+    try {
+      const result = await this.provider.createOrder(trusted, {
+        cart_id: cart.id, items: summary.items, total_minor: summary.total_minor,
+        currency: summary.currency, idempotency_key: key
+      });
+      const response = { ...result, cart_id: cart.id, status: result.status ?? "accepted" };
+      this.store.idempotency.set(scope, { request_hash: requestHash, response });
+      this.#audit(trusted, "provider.order.create", response, "accepted");
+      return structuredClone(response);
+    } catch (error) {
+      if (!(error instanceof ProviderError)) throw error;
+      if (error.unknownInFlight && typeof this.provider.reconcileOrder === "function") {
+        const reconciled = await this.provider.reconcileOrder(trusted, { idempotency_key: key });
+        if (reconciled) {
+          const response = { ...reconciled, cart_id: cart.id, status: reconciled.status ?? "accepted" };
+          this.store.idempotency.set(scope, { request_hash: requestHash, response });
+          this.#audit(trusted, "provider.order.reconcile", response, "accepted");
+          return structuredClone(response);
+        }
+      }
+      this.#audit(trusted, "provider.order.create", cart, "rejected", { code: error.unknownInFlight ? "COMMERCE_UNKNOWN_IN_FLIGHT" : error.code });
+      fail(error.unknownInFlight ? "COMMERCE_UNKNOWN_IN_FLIGHT" : error.code, "Commerce provider request failed.");
+    }
   }
 
   get(context, resource, id) { return this.repositories[resource].get(requireTenantContext(context), id); }
