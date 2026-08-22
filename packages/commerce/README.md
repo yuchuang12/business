@@ -36,3 +36,8 @@ spreadsheet rows. Each row must contain `name`, `sku`, `price` (or integer
 `imported`, `updated`, `failed`, `success_count`, `failure_count`, and
 row-numbered `errors`. The idempotency key is tenant-scoped; replay returns the
 original result, while a changed payload returns `COMMERCE_CONFLICT`.
+
+The backend implementation is the Go package `github.com/yuchuang12/business/packages/commerce`.
+Its typed API (`CommerceService`, `ProductInput`, `ImportRequest`, and
+`ImportResult`) uses `InMemoryCommerceStore` for deterministic CI tests and does
+not parse files or contact cloud resources.
