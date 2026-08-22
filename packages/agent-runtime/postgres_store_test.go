@@ -108,4 +108,11 @@ func TestPostgresRuntimeStoreClaimsAndReconcilesEffects(t *testing.T) {
 	if err != nil || fmt.Sprint(claimed) != "[run_100]" {
 		t.Fatalf("recoverable work = %v, %v", claimed, err)
 	}
+	events, err := store.QueryOperationalAudit(ctx, OperationalAuditQuery{CorrelationID: effect.CorrelationID})
+	if err != nil || len(events) != 1 {
+		t.Fatalf("correlation audit = %+v, %v", events, err)
+	}
+	if events[0].TenantID != ctx.TenantID || events[0].TraceID != ctx.TraceID || events[0].CorrelationID != effect.CorrelationID || events[0].Outcome != string(ProviderEffectUnknown) {
+		t.Fatalf("correlation audit event = %+v", events[0])
+	}
 }
