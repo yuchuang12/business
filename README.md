@@ -36,3 +36,16 @@ tests/security/        多租户与安全测试
 - MVP 采用模块化单体和单一 Provider 链路，禁止提前微服务化或多云抽象。
 
 完整范围、需求、路线图与 Definition of Done 见 `docs/product/mvp.md`。
+
+## Server runtime verification
+
+The server-side Agent Runtime is implemented in Go at
+`packages/agent-runtime` (package `agentruntime`). From the repository root,
+run:
+
+```sh
+go test ./...
+```
+
+Frontend and contract JavaScript remain independently verified by their existing
+Node test commands; the Go runtime does not load server `.mjs` modules.

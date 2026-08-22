@@ -36,7 +36,7 @@ Web / Merchant Console / Customer Site
 apps/web/                   Merchant Console + Customer site shell
 apps/api/                   模块化单体后端
 packages/contracts/         语言级生成物或共享类型（源定义仍在 /contracts）
-packages/agent-runtime/     Planner、Policy、Executor
+packages/agent-runtime/     Go server runtime: Planner、Policy、Executor
 packages/tools/             typed Tool 实现
 packages/workflow/          发布、域名等长流程
 packages/commerce/          Product、Cart、OrderIntent、Lead

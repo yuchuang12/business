@@ -83,14 +83,14 @@ schemas or contacting cloud resources.
 ## Local verification
 
 Run the complete deterministic Golden Path verification from the repository
-root:
+root. The Agent Runtime and its integration boundary use Go; the remaining
+frontend/contract fixtures retain their existing JavaScript command:
 
 ```sh
+go test ./...
 node --test \
   tests/commerce-golden-path.test.mjs \
-  tests/e2e/agent-runtime-golden-path.test.mjs \
   tests/e2e/generative-ui-golden-path.test.mjs \
-  tests/e2e/golden-path-integration-boundary.test.mjs \
   tests/contracts/*.test.mjs
 ```
 
